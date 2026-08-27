@@ -1,7 +1,11 @@
 package com.shivankkapoor.aldrop.Data;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.UUID;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -37,6 +41,17 @@ public class Platform {
     @Column(name="totp_available",nullable = false, unique = false)
     private boolean totpAvailable;
 
+    @Column(name="require_device_binding",nullable = false, unique = false)
+    private boolean requireDeviceBinding;
+
     @Column(name="is_active",nullable = false, unique = false)
     private boolean isActive;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
 }
