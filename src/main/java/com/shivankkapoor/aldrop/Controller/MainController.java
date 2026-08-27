@@ -40,6 +40,7 @@ public class MainController {
         resp.put("uptime", uptimeStr);
         resp.put("platform", "Java");
         resp.put("version", System.getProperty("java.version"));
+        resp.put("runtime",System.getProperty("java.runtime.name"));
         resp.put("vendor", System.getProperty("java.vendor"));
 
         return ResponseEntity.ok(resp);
