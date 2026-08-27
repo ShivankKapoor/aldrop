@@ -7,7 +7,7 @@ CREATE TABLE platforms (
     api_key                 TEXT NOT NULL UNIQUE,
     session_ttl             INTERVAL NOT NULL DEFAULT '30 minutes',
     max_sessions_per_user   INT,
-    totp_available          BOOLEAN NOT NULL DEFAULT true,
+    totp_available          BOOLEAN NOT NULL DEFAULT false,
     is_active                BOOLEAN NOT NULL DEFAULT true,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
