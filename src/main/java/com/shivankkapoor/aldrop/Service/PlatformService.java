@@ -9,6 +9,7 @@ import java.util.UUID;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.Exception.PlatformNameTakenException;
+import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,17 @@ public class PlatformService {
 
         Platform saved = platformRepository.save(platform);
         log.info("Platform created, id={}, name={}", saved.getId(), saved.getName());
+        return saved;
+    }
+
+    public Platform updateActiveStatus(UUID id, boolean isActive){
+        Platform platform = platformRepository.findById(id)
+                .orElseThrow(() -> new PlatformNotFoundException(id));
+
+        platform.setActive(isActive);
+
+        Platform saved = platformRepository.save(platform);
+        log.info("Platform status updated, id={}, isActive={}", saved.getId(), isActive);
         return saved;
     }
 
