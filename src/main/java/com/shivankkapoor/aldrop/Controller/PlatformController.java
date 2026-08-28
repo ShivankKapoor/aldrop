@@ -3,7 +3,7 @@ package com.shivankkapoor.aldrop.Controller;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.CreatePlatformResponseDTO;
-import com.shivankkapoor.aldrop.Service.PlatfromService;
+import com.shivankkapoor.aldrop.Service.PlatformService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +22,7 @@ public class PlatformController {
     private static final Logger log = LoggerFactory.getLogger(PlatformController.class);
 
     @Autowired
-    private PlatfromService platformService;
+    private PlatformService platformService;
 
     @PostMapping("/create")
     public ResponseEntity<CreatePlatformResponseDTO> create(@Valid @RequestBody CreatePlatformRequestDTO request){

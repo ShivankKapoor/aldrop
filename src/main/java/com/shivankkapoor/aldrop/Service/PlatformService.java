@@ -16,9 +16,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
-public class PlatfromService {
+public class PlatformService {
 
-    private static final Logger log = LoggerFactory.getLogger(PlatfromService.class);
+    private static final Logger log = LoggerFactory.getLogger(PlatformService.class);
     private static final Duration DEFAULT_SESSION_TTL = Duration.ofMinutes(30);
     private static final int API_KEY_BYTES = 32;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
