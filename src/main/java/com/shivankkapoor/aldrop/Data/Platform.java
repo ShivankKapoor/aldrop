@@ -5,7 +5,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -33,6 +35,7 @@ public class Platform {
     private String apiKey;
 
     @Column(name = "session_ttl", nullable = false, unique = false)
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
     private Duration sessionTtl;
 
     @Column(name="max_sessions_per_user", nullable = true, unique = false)
