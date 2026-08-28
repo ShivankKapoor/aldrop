@@ -1,9 +1,7 @@
 package com.shivankkapoor.aldrop.Service;
 
 
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.Platform;
@@ -11,6 +9,7 @@ import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.Exception.PlatformNameTakenException;
 import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
+import com.shivankkapoor.aldrop.Security.TokenGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,10 +21,12 @@ public class PlatformService {
     private static final Logger log = LoggerFactory.getLogger(PlatformService.class);
     private static final Duration DEFAULT_SESSION_TTL = Duration.ofMinutes(30);
     private static final int API_KEY_BYTES = 32;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Autowired
     private PlatformRepository platformRepository;
+
+    @Autowired
+    private TokenGenerator tokenGenerator;
 
     public Platform create(CreatePlatformRequestDTO requestDTO){
         if (platformRepository.findByName(requestDTO.getName()).isPresent()) {
@@ -36,7 +37,7 @@ public class PlatformService {
         Platform platform = new Platform();
         platform.setId(UUID.randomUUID());
         platform.setName(requestDTO.getName());
-        platform.setApiKey(generateApiKey());
+        platform.setApiKey(tokenGenerator.generate(API_KEY_BYTES));
         platform.setSessionTtl(requestDTO.getSessionTtl() != null ? requestDTO.getSessionTtl() : DEFAULT_SESSION_TTL);
         platform.setMaxSessionsPerUser(requestDTO.getMaxSessionsPerUser());
         platform.setTotpAvailable(requestDTO.isTotpAvailable());
@@ -59,9 +60,4 @@ public class PlatformService {
         return saved;
     }
 
-    private String generateApiKey(){
-        byte[] bytes = new byte[API_KEY_BYTES];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
 }

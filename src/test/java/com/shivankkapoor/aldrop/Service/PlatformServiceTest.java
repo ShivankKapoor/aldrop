@@ -3,6 +3,7 @@ package com.shivankkapoor.aldrop.Service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,12 +24,16 @@ import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.Exception.PlatformNameTakenException;
 import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
+import com.shivankkapoor.aldrop.Security.TokenGenerator;
 
 @ExtendWith(MockitoExtension.class)
 class PlatformServiceTest {
 
     @Mock
     private PlatformRepository platformRepository;
+
+    @Mock
+    private TokenGenerator tokenGenerator;
 
     @InjectMocks
     private PlatformService platformService;
@@ -43,12 +48,13 @@ class PlatformServiceTest {
 
         when(platformRepository.findByName("acme")).thenReturn(Optional.empty());
         when(platformRepository.save(any(Platform.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenGenerator.generate(anyInt())).thenReturn("mock-api-key");
 
         Platform saved = platformService.create(request);
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getName()).isEqualTo("acme");
-        assertThat(saved.getApiKey()).isNotBlank();
+        assertThat(saved.getApiKey()).isEqualTo("mock-api-key");
         assertThat(saved.getSessionTtl()).isEqualTo(Duration.ofMinutes(30));
         assertThat(saved.getMaxSessionsPerUser()).isEqualTo(5);
         assertThat(saved.isTotpAvailable()).isTrue();
@@ -64,6 +70,7 @@ class PlatformServiceTest {
 
         when(platformRepository.findByName("acme")).thenReturn(Optional.empty());
         when(platformRepository.save(any(Platform.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenGenerator.generate(anyInt())).thenReturn("mock-api-key");
 
         Platform saved = platformService.create(request);
 
