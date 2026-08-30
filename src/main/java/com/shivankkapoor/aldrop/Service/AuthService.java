@@ -101,6 +101,15 @@ public class AuthService {
             throw new InvalidSessionException();
         }
 
+        User user = userRepository.findById(session.getUserId())
+                .orElseThrow(InvalidSessionException::new);
+
+        if (!user.isActive()) {
+            log.warn("Session validation rejected, user inactive, platformId={}, sessionId={}, userId={}",
+                    platformId, session.getId(), user.getId());
+            throw new InvalidSessionException();
+        }
+
         Session saved = sessionRepository.save(session);
         log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), saved.getUserId(), platformId);
 
