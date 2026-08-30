@@ -1,5 +1,6 @@
 package com.shivankkapoor.aldrop.Service;
 
+import java.util.Locale;
 import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.User;
@@ -24,15 +25,17 @@ public class UserService {
     private PasswordHasher passwordHasher;
 
     public User register(UUID platformId, RegisterUserRequestDTO requestDTO){
-        if (userRepository.findByPlatformIdAndUsername(platformId, requestDTO.getUsername()).isPresent()) {
-            log.warn("User registration rejected, username already taken: platformId={}, username={}", platformId, requestDTO.getUsername());
-            throw new UsernameTakenException(requestDTO.getUsername());
+        String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
+
+        if (userRepository.findByPlatformIdAndUsername(platformId, username).isPresent()) {
+            log.warn("User registration rejected, username already taken: platformId={}, username={}", platformId, username);
+            throw new UsernameTakenException(username);
         }
 
         User user = new User();
         user.setId(UUID.randomUUID());
         user.setPlatformId(platformId);
-        user.setUsername(requestDTO.getUsername());
+        user.setUsername(username);
         user.setPasswordHash(passwordHasher.hash(requestDTO.getPassword()));
         user.setTotpEnabled(false);
         user.setActive(true);

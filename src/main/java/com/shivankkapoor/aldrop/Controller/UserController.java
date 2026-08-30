@@ -3,9 +3,12 @@ package com.shivankkapoor.aldrop.Controller;
 import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.User;
+import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.RegisterUserResponseDTO;
 import com.shivankkapoor.aldrop.Filter.PlatformApiKeyAuthFilter;
+import com.shivankkapoor.aldrop.Service.AuthService;
 import com.shivankkapoor.aldrop.Service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -28,6 +31,9 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private AuthService authService;
+
     @PostMapping("/register")
     public ResponseEntity<RegisterUserResponseDTO> register(
             @Valid @RequestBody RegisterUserRequestDTO request,
@@ -43,5 +49,16 @@ public class UserController {
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponseDTO> login(
+            @Valid @RequestBody LoginRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        log.info("Login requested, platformId={}, username={}", platformId, request.getUsername());
+        LoginResponseDTO response = authService.login(platformId, request);
+
+        return ResponseEntity.ok(response);
     }
 }
