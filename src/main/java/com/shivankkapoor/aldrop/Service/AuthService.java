@@ -9,8 +9,11 @@ import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
+import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
 import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
+import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
 import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
 import com.shivankkapoor.aldrop.Repository.SessionRepository;
@@ -86,5 +89,20 @@ public class AuthService {
         log.info("Login succeeded, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
 
         return new LoginResponseDTO(saved.getTokenHash(), saved.getExpiresAt());
+    }
+
+    public ValidateSessionResponseDTO validate(UUID platformId, ValidateSessionRequestDTO requestDTO) {
+        Session session = sessionRepository.findByTokenHash(requestDTO.getToken())
+                .orElseThrow(InvalidSessionException::new);
+
+        if (!session.getPlatformId().equals(platformId) || session.getExpiresAt().isBefore(OffsetDateTime.now())) {
+            log.warn("Session validation rejected, platformId={}, sessionId={}", platformId, session.getId());
+            throw new InvalidSessionException();
+        }
+
+        Session saved = sessionRepository.save(session);
+        log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), saved.getUserId(), platformId);
+
+        return new ValidateSessionResponseDTO(saved.getUserId(), saved.getExpiresAt());
     }
 }

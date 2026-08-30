@@ -5,8 +5,10 @@ import java.util.UUID;
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.RegisterUserResponseDTO;
+import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
 import com.shivankkapoor.aldrop.Filter.PlatformApiKeyAuthFilter;
 import com.shivankkapoor.aldrop.Service.AuthService;
 import com.shivankkapoor.aldrop.Service.UserService;
@@ -58,6 +60,16 @@ public class UserController {
         UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
         log.info("Login requested, platformId={}, username={}", platformId, request.getUsername());
         LoginResponseDTO response = authService.login(platformId, request);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/validate")
+    public ResponseEntity<ValidateSessionResponseDTO> validate(
+            @Valid @RequestBody ValidateSessionRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        ValidateSessionResponseDTO response = authService.validate(platformId, request);
 
         return ResponseEntity.ok(response);
     }
