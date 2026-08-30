@@ -1,6 +1,7 @@
 package com.shivankkapoor.aldrop.Service;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -57,8 +58,21 @@ public class AuthService {
         Platform platform = platformRepository.findById(platformId)
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
 
-        String token = tokenGenerator.generate(SESSION_TOKEN_BYTES);
         OffsetDateTime now = OffsetDateTime.now();
+        Integer maxSessionsPerUser = platform.getMaxSessionsPerUser();
+        if (maxSessionsPerUser != null) {
+            List<Session> activeSessions = sessionRepository
+                    .findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(user.getId(), platformId, now);
+            int numToEvict = activeSessions.size() - maxSessionsPerUser + 1;
+            if (numToEvict > 0) {
+                List<Session> toEvict = activeSessions.subList(0, numToEvict);
+                sessionRepository.deleteAll(toEvict);
+                log.info("Evicted {} oldest session(s) for userId={}, platformId={} to respect maxSessionsPerUser={}",
+                        toEvict.size(), user.getId(), platformId, maxSessionsPerUser);
+            }
+        }
+
+        String token = tokenGenerator.generate(SESSION_TOKEN_BYTES);
 
         Session session = new Session();
         session.setId(UUID.randomUUID());
