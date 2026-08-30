@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
@@ -72,5 +73,15 @@ public class UserController {
         ValidateSessionResponseDTO response = authService.validate(platformId, request);
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            @Valid @RequestBody LogoutRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        authService.logout(platformId, request);
+
+        return ResponseEntity.noContent().build();
     }
 }
