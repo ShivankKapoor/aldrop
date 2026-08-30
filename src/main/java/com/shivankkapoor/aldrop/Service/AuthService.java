@@ -9,6 +9,7 @@ import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
@@ -126,6 +127,21 @@ public class AuthService {
                                     session.getId(), session.getUserId(), platformId);
                         },
                         () -> log.info("Logout no-op, no matching session for platformId={}", platformId)
+                );
+    }
+
+    public void logoutAll(UUID platformId, LogoutAllRequestDTO requestDTO) {
+        sessionRepository.findByTokenHash(requestDTO.getToken())
+                .filter(session -> session.getPlatformId().equals(platformId))
+                .ifPresentOrElse(
+                        session -> {
+                            List<Session> sessions = sessionRepository
+                                    .findByUserIdAndPlatformId(session.getUserId(), platformId);
+                            sessionRepository.deleteAll(sessions);
+                            log.info("Logout-all succeeded, userId={}, platformId={}, sessionsRevoked={}",
+                                    session.getUserId(), platformId, sessions.size());
+                        },
+                        () -> log.info("Logout-all no-op, no matching session for platformId={}", platformId)
                 );
     }
 }

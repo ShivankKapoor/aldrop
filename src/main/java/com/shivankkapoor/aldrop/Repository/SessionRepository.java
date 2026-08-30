@@ -11,5 +11,6 @@ import java.util.UUID;
 public interface SessionRepository extends JpaRepository<Session, UUID> {
     Optional<Session> findByTokenHash(String tokenHash);
     List<Session> findByUserId(UUID userId);
+    List<Session> findByUserIdAndPlatformId(UUID userId, UUID platformId);
     List<Session> findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(UUID userId, UUID platformId, OffsetDateTime now);
 }

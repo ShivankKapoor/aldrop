@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
@@ -81,6 +82,16 @@ public class UserController {
             HttpServletRequest servletRequest){
         UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
         authService.logout(platformId, request);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/logout-all")
+    public ResponseEntity<Void> logoutAll(
+            @Valid @RequestBody LogoutAllRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        authService.logoutAll(platformId, request);
 
         return ResponseEntity.noContent().build();
     }
