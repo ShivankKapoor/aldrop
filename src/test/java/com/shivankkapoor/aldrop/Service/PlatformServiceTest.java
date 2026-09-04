@@ -118,4 +118,28 @@ class PlatformServiceTest {
 
         verify(platformRepository, never()).save(any());
     }
+
+    @Test
+    void deletesPlatformWhenItExists() {
+        UUID id = UUID.randomUUID();
+        Platform platform = new Platform();
+        platform.setId(id);
+
+        when(platformRepository.findById(id)).thenReturn(Optional.of(platform));
+
+        platformService.delete(id);
+
+        verify(platformRepository).delete(platform);
+    }
+
+    @Test
+    void throwsWhenDeletingUnknownPlatform() {
+        UUID id = UUID.randomUUID();
+        when(platformRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> platformService.delete(id))
+                .isInstanceOf(PlatformNotFoundException.class);
+
+        verify(platformRepository, never()).delete(any());
+    }
 }

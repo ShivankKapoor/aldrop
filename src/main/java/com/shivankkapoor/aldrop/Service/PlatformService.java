@@ -60,4 +60,12 @@ public class PlatformService {
         return saved;
     }
 
+    public void delete(UUID id){
+        Platform platform = platformRepository.findById(id)
+                .orElseThrow(() -> new PlatformNotFoundException(id));
+
+        platformRepository.delete(platform);
+        log.info("Platform deleted, id={}, name={}", platform.getId(), platform.getName());
+    }
+
 }

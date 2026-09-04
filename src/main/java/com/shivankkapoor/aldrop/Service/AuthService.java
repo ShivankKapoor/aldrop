@@ -22,6 +22,7 @@ import com.shivankkapoor.aldrop.Repository.SessionRepository;
 import com.shivankkapoor.aldrop.Repository.UserRepository;
 import com.shivankkapoor.aldrop.Security.PasswordHasher;
 import com.shivankkapoor.aldrop.Security.TokenGenerator;
+import com.shivankkapoor.aldrop.Security.TokenHasher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,9 @@ public class AuthService {
 
     @Autowired
     private TokenGenerator tokenGenerator;
+
+    @Autowired
+    private TokenHasher tokenHasher;
 
     @Autowired
     private SessionRepository sessionRepository;
@@ -77,11 +81,11 @@ public class AuthService {
             }
         }
 
-        String token = tokenGenerator.generate(SESSION_TOKEN_BYTES);
+        String rawToken = tokenGenerator.generate(SESSION_TOKEN_BYTES);
 
         Session session = new Session();
         session.setId(UUID.randomUUID());
-        session.setTokenHash(token);
+        session.setTokenHash(tokenHasher.hash(rawToken));
         session.setUserId(user.getId());
         session.setPlatformId(platformId);
         session.setCreatedAt(now);
@@ -90,11 +94,11 @@ public class AuthService {
         Session saved = sessionRepository.save(session);
         log.info("Login succeeded, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
 
-        return new LoginResponseDTO(saved.getTokenHash(), saved.getExpiresAt());
+        return new LoginResponseDTO(rawToken, saved.getExpiresAt());
     }
 
     public ValidateSessionResponseDTO validate(UUID platformId, ValidateSessionRequestDTO requestDTO) {
-        Session session = sessionRepository.findByTokenHash(requestDTO.getToken())
+        Session session = sessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getToken()))
                 .orElseThrow(InvalidSessionException::new);
 
         if (!session.getPlatformId().equals(platformId) || session.getExpiresAt().isBefore(OffsetDateTime.now())) {
@@ -118,7 +122,7 @@ public class AuthService {
     }
 
     public void logout(UUID platformId, LogoutRequestDTO requestDTO) {
-        sessionRepository.findByTokenHash(requestDTO.getToken())
+        sessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getToken()))
                 .filter(session -> session.getPlatformId().equals(platformId))
                 .ifPresentOrElse(
                         session -> {
@@ -131,7 +135,7 @@ public class AuthService {
     }
 
     public void logoutAll(UUID platformId, LogoutAllRequestDTO requestDTO) {
-        sessionRepository.findByTokenHash(requestDTO.getToken())
+        sessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getToken()))
                 .filter(session -> session.getPlatformId().equals(platformId))
                 .ifPresentOrElse(
                         session -> {

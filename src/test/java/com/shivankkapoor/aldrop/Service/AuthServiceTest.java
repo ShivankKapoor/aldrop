@@ -38,6 +38,7 @@ import com.shivankkapoor.aldrop.Repository.SessionRepository;
 import com.shivankkapoor.aldrop.Repository.UserRepository;
 import com.shivankkapoor.aldrop.Security.PasswordHasher;
 import com.shivankkapoor.aldrop.Security.TokenGenerator;
+import com.shivankkapoor.aldrop.Security.TokenHasher;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -53,6 +54,9 @@ class AuthServiceTest {
 
     @Mock
     private TokenGenerator tokenGenerator;
+
+    @Mock
+    private TokenHasher tokenHasher;
 
     @Mock
     private SessionRepository sessionRepository;
@@ -93,6 +97,7 @@ class AuthServiceTest {
         when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithLimit(null)));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         LoginResponseDTO response = authService.login(platformId, request);
@@ -104,7 +109,7 @@ class AuthServiceTest {
         Session saved = captor.getValue();
         assertThat(saved.getUserId()).isEqualTo(userId);
         assertThat(saved.getPlatformId()).isEqualTo(platformId);
-        assertThat(saved.getTokenHash()).isEqualTo("generated-token");
+        assertThat(saved.getTokenHash()).isEqualTo("hashed-generated-token");
         assertThat(saved.getExpiresAt()).isEqualTo(saved.getCreatedAt().plus(Duration.ofHours(2)));
         assertThat(response.getExpiresAt()).isEqualTo(saved.getExpiresAt());
     }
@@ -119,6 +124,7 @@ class AuthServiceTest {
         when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithLimit(null)));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.login(platformId, request);
@@ -182,6 +188,7 @@ class AuthServiceTest {
         when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithLimit(null)));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.login(platformId, request);
@@ -208,6 +215,7 @@ class AuthServiceTest {
         when(sessionRepository.findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(eq(userId), eq(platformId), any()))
                 .thenReturn(List.of(oldest, newer));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.login(platformId, request);
@@ -233,6 +241,7 @@ class AuthServiceTest {
         when(sessionRepository.findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(eq(userId), eq(platformId), any()))
                 .thenReturn(List.of(existing));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.login(platformId, request);
@@ -261,6 +270,7 @@ class AuthServiceTest {
         when(sessionRepository.findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(eq(userId), eq(platformId), any()))
                 .thenReturn(List.of(oldest, secondOldest, thirdOldest, newest));
         when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.login(platformId, request);
@@ -285,7 +295,8 @@ class AuthServiceTest {
         session.setPlatformId(platformId);
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
         when(sessionRepository.save(session)).thenReturn(session);
 
@@ -301,7 +312,8 @@ class AuthServiceTest {
         ValidateSessionRequestDTO request = new ValidateSessionRequestDTO();
         request.setToken("unknown-token");
 
-        when(sessionRepository.findByTokenHash("unknown-token")).thenReturn(Optional.empty());
+        when(tokenHasher.hash("unknown-token")).thenReturn("hashed-unknown-token");
+        when(sessionRepository.findByTokenHash("hashed-unknown-token")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
                 .isInstanceOf(InvalidSessionException.class);
@@ -319,7 +331,8 @@ class AuthServiceTest {
         session.setPlatformId(UUID.randomUUID());
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
                 .isInstanceOf(InvalidSessionException.class);
@@ -340,7 +353,8 @@ class AuthServiceTest {
         session.setPlatformId(platformId);
         session.setExpiresAt(OffsetDateTime.now().minusMinutes(1));
 
-        when(sessionRepository.findByTokenHash("expired-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("expired-token")).thenReturn("hashed-expired-token");
+        when(sessionRepository.findByTokenHash("hashed-expired-token")).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
                 .isInstanceOf(InvalidSessionException.class);
@@ -364,7 +378,8 @@ class AuthServiceTest {
         User inactiveUser = activeUser();
         inactiveUser.setActive(false);
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
         when(userRepository.findById(userId)).thenReturn(Optional.of(inactiveUser));
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
@@ -385,7 +400,8 @@ class AuthServiceTest {
         session.setPlatformId(platformId);
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
@@ -406,7 +422,8 @@ class AuthServiceTest {
         session.setPlatformId(platformId);
         session.setUserId(userId);
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
 
         authService.logout(platformId, request);
 
@@ -418,7 +435,8 @@ class AuthServiceTest {
         LogoutRequestDTO request = new LogoutRequestDTO();
         request.setToken("unknown-token");
 
-        when(sessionRepository.findByTokenHash("unknown-token")).thenReturn(Optional.empty());
+        when(tokenHasher.hash("unknown-token")).thenReturn("hashed-unknown-token");
+        when(sessionRepository.findByTokenHash("hashed-unknown-token")).thenReturn(Optional.empty());
 
         authService.logout(platformId, request);
 
@@ -435,7 +453,8 @@ class AuthServiceTest {
         session.setPlatformId(UUID.randomUUID());
         session.setUserId(userId);
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
 
         authService.logout(platformId, request);
 
@@ -457,7 +476,8 @@ class AuthServiceTest {
         Session other = new Session();
         other.setId(UUID.randomUUID());
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
         when(sessionRepository.findByUserIdAndPlatformId(userId, platformId)).thenReturn(List.of(session, other));
 
         authService.logoutAll(platformId, request);
@@ -470,7 +490,8 @@ class AuthServiceTest {
         LogoutAllRequestDTO request = new LogoutAllRequestDTO();
         request.setToken("unknown-token");
 
-        when(sessionRepository.findByTokenHash("unknown-token")).thenReturn(Optional.empty());
+        when(tokenHasher.hash("unknown-token")).thenReturn("hashed-unknown-token");
+        when(sessionRepository.findByTokenHash("hashed-unknown-token")).thenReturn(Optional.empty());
 
         authService.logoutAll(platformId, request);
 
@@ -488,7 +509,8 @@ class AuthServiceTest {
         session.setPlatformId(UUID.randomUUID());
         session.setUserId(userId);
 
-        when(sessionRepository.findByTokenHash("valid-token")).thenReturn(Optional.of(session));
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
 
         authService.logoutAll(platformId, request);
 
