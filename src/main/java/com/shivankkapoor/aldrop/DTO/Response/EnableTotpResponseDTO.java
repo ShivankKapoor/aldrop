@@ -1,7 +1,5 @@
 package com.shivankkapoor.aldrop.DTO.Response;
 
-import java.time.OffsetDateTime;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,8 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginResponseDTO {
-    private String token;
-    private String totpToken;
-    private OffsetDateTime expiresAt;
+public class EnableTotpResponseDTO {
+    private String secret;
+    private String otpAuthUri;
 }

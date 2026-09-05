@@ -58,6 +58,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(InvalidTotpException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidTotp(InvalidTotpException ex){
+        log.warn(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TotpNotAvailableException.class)
+    public ResponseEntity<Map<String, String>> handleTotpNotAvailable(TotpNotAvailableException ex){
+        log.warn(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TotpAlreadyEnabledException.class)
+    public ResponseEntity<Map<String, String>> handleTotpAlreadyEnabled(TotpAlreadyEnabledException ex){
+        log.warn(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex){
         log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());

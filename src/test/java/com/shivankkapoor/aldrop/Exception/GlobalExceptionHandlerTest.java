@@ -83,6 +83,33 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void mapsInvalidTotpToUnauthorized() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleInvalidTotp(new InvalidTotpException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody()).containsEntry("error", "Invalid or expired TOTP challenge");
+    }
+
+    @Test
+    void mapsTotpNotAvailableToConflict() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleTotpNotAvailable(new TotpNotAvailableException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).containsEntry("error", "TOTP is not available on this platform");
+    }
+
+    @Test
+    void mapsTotpAlreadyEnabledToConflict() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleTotpAlreadyEnabled(new TotpAlreadyEnabledException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).containsEntry("error", "TOTP is already enabled for this user");
+    }
+
+    @Test
     void mapsDataIntegrityViolationToConflict() {
         DataIntegrityViolationException ex =
                 new DataIntegrityViolationException("duplicate key", new RuntimeException("root cause"));

@@ -3,11 +3,16 @@ package com.shivankkapoor.aldrop.Controller;
 import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.User;
+import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.VerifyTotpRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
+import com.shivankkapoor.aldrop.DTO.Response.EnableTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.RegisterUserResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
@@ -94,5 +99,35 @@ public class UserController {
         authService.logoutAll(platformId, request);
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/login/verify-totp")
+    public ResponseEntity<LoginResponseDTO> verifyTotp(
+            @Valid @RequestBody VerifyTotpRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        LoginResponseDTO response = authService.verifyTotp(platformId, request);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/totp/enable")
+    public ResponseEntity<EnableTotpResponseDTO> enableTotp(
+            @Valid @RequestBody EnableTotpRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        EnableTotpResponseDTO response = authService.enableTotp(platformId, request);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/totp/confirm")
+    public ResponseEntity<ConfirmTotpResponseDTO> confirmTotp(
+            @Valid @RequestBody ConfirmTotpRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        ConfirmTotpResponseDTO response = authService.confirmTotp(platformId, request);
+
+        return ResponseEntity.ok(response);
     }
 }
