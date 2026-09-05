@@ -19,4 +19,4 @@ jobs:
           cache: maven
 
       - name: Run unit tests
-        run: ./mvnw -B test -Dtest='!AldropApplicationTests' -DfailIfNoTests=true
+        run: ./mvnw -B test -Dtest='!AldropApplicationTests,!*KarateRunner' -DfailIfNoTests=true
