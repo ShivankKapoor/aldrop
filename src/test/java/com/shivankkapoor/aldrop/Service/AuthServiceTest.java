@@ -38,6 +38,7 @@ import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.EnableTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
+import com.shivankkapoor.aldrop.Exception.DeviceBindingRequiredException;
 import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
 import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
 import com.shivankkapoor.aldrop.Exception.InvalidTotpException;
@@ -119,6 +120,12 @@ class AuthServiceTest {
     private Platform platformWithTotpAvailable(boolean totpAvailable) {
         Platform platform = platformWithLimit(null);
         platform.setTotpAvailable(totpAvailable);
+        return platform;
+    }
+
+    private Platform platformWithDeviceBinding(boolean requireDeviceBinding) {
+        Platform platform = platformWithLimit(null);
+        platform.setRequireDeviceBinding(requireDeviceBinding);
         return platform;
     }
 
@@ -346,12 +353,201 @@ class AuthServiceTest {
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
         when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(false)));
         when(sessionRepository.save(session)).thenReturn(session);
 
         ValidateSessionResponseDTO response = authService.validate(platformId, request);
 
         assertThat(response.getUserId()).isEqualTo(userId);
         assertThat(response.getExpiresAt()).isEqualTo(session.getExpiresAt());
+        verify(sessionRepository).save(session);
+    }
+
+    // ---- device binding ----
+
+    @Test
+    void loginThrowsDeviceBindingRequiredWhenPlatformRequiresItAndFieldsMissing() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+
+        assertThatThrownBy(() -> authService.login(platformId, request))
+                .isInstanceOf(DeviceBindingRequiredException.class);
+
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void loginStoresIpAddressAndUserAgentOnSessionWhenPlatformRequiresDeviceBinding() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+        request.setIpAddress("203.0.113.5");
+        request.setUserAgent("test-agent");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.login(platformId, request);
+
+        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
+        verify(sessionRepository).save(captor.capture());
+        assertThat(captor.getValue().getIpAddress()).isEqualTo("203.0.113.5");
+        assertThat(captor.getValue().getUserAgent()).isEqualTo("test-agent");
+    }
+
+    @Test
+    void validateThrowsDeviceBindingRequiredWhenPlatformRequiresItAndFieldsMissing() {
+        ValidateSessionRequestDTO request = new ValidateSessionRequestDTO();
+        request.setToken("valid-token");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setTokenHash("valid-token");
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        session.setIpAddress("203.0.113.5");
+        session.setUserAgent("test-agent");
+
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+
+        assertThatThrownBy(() -> authService.validate(platformId, request))
+                .isInstanceOf(DeviceBindingRequiredException.class);
+
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void validateThrowsInvalidSessionWhenDeviceMismatch() {
+        ValidateSessionRequestDTO request = new ValidateSessionRequestDTO();
+        request.setToken("valid-token");
+        request.setIpAddress("198.51.100.9");
+        request.setUserAgent("different-agent");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setTokenHash("valid-token");
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        session.setIpAddress("203.0.113.5");
+        session.setUserAgent("test-agent");
+
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+
+        assertThatThrownBy(() -> authService.validate(platformId, request))
+                .isInstanceOf(InvalidSessionException.class);
+
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void loginSucceedsWithoutDeviceInfoWhenPlatformDoesNotRequireDeviceBinding() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(false)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LoginResponseDTO response = authService.login(platformId, request);
+
+        assertThat(response.getToken()).isEqualTo("generated-token");
+    }
+
+    @Test
+    void loginStoresIpAddressAndUserAgentEvenWhenPlatformDoesNotRequireDeviceBinding() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+        request.setIpAddress("203.0.113.5");
+        request.setUserAgent("test-agent");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(false)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.login(platformId, request);
+
+        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
+        verify(sessionRepository).save(captor.capture());
+        assertThat(captor.getValue().getIpAddress()).isEqualTo("203.0.113.5");
+        assertThat(captor.getValue().getUserAgent()).isEqualTo("test-agent");
+    }
+
+    @Test
+    void validateDoesNotEnforceDeviceBindingWhenPlatformDoesNotRequireIt() {
+        ValidateSessionRequestDTO request = new ValidateSessionRequestDTO();
+        request.setToken("valid-token");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setTokenHash("valid-token");
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        session.setIpAddress("203.0.113.5");
+        session.setUserAgent("test-agent");
+
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(false)));
+        when(sessionRepository.save(session)).thenReturn(session);
+
+        ValidateSessionResponseDTO response = authService.validate(platformId, request);
+
+        assertThat(response.getUserId()).isEqualTo(userId);
+        verify(sessionRepository).save(session);
+    }
+
+    @Test
+    void validateSucceedsWhenDeviceMatchesOnRequiredPlatform() {
+        ValidateSessionRequestDTO request = new ValidateSessionRequestDTO();
+        request.setToken("valid-token");
+        request.setIpAddress("203.0.113.5");
+        request.setUserAgent("test-agent");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setTokenHash("valid-token");
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        session.setIpAddress("203.0.113.5");
+        session.setUserAgent("test-agent");
+
+        when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
+        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+        when(sessionRepository.save(session)).thenReturn(session);
+
+        ValidateSessionResponseDTO response = authService.validate(platformId, request);
+
+        assertThat(response.getUserId()).isEqualTo(userId);
         verify(sessionRepository).save(session);
     }
 
@@ -768,6 +964,56 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidTotpException.class);
 
         verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void verifyTotpThrowsDeviceBindingRequiredWhenPlatformRequiresItAndFieldsMissing() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+
+        TotpSession totpSession = activeTotpSession();
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
+        when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(DeviceBindingRequiredException.class);
+
+        verify(sessionRepository, never()).save(any());
+        assertThat(totpSession.getConsumedAt()).isNull();
+        verify(totpSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyTotpStoresIpAddressAndUserAgentOnSessionWhenPlatformRequiresDeviceBinding() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+        request.setIpAddress("203.0.113.5");
+        request.setUserAgent("test-agent");
+
+        TotpSession totpSession = activeTotpSession();
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
+        when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpSessionRepository.save(any(TotpSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
+        when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.verifyTotp(platformId, request);
+
+        ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
+        verify(sessionRepository).save(captor.capture());
+        assertThat(captor.getValue().getIpAddress()).isEqualTo("203.0.113.5");
+        assertThat(captor.getValue().getUserAgent()).isEqualTo("test-agent");
     }
 
     @Test

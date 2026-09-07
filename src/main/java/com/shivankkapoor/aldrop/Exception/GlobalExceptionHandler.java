@@ -82,6 +82,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(DeviceBindingRequiredException.class)
+    public ResponseEntity<Map<String, String>> handleDeviceBindingRequired(DeviceBindingRequiredException ex){
+        log.warn(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex){
         log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());

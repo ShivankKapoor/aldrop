@@ -16,6 +16,6 @@ class AldropKarateRunner {
 
     @Karate.Test
     Karate allFlows() {
-        return Karate.run("auth-flow", "totp-flow").relativeTo(getClass());
+        return Karate.run("auth-flow", "totp-flow", "device-binding-flow").relativeTo(getClass());
     }
 }

@@ -119,6 +119,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void mapsDeviceBindingRequiredToBadRequest() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleDeviceBindingRequired(new DeviceBindingRequiredException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsEntry("error", "ipAddress and userAgent are required for this platform");
+    }
+
+    @Test
     void mapsDataIntegrityViolationToConflict() {
         DataIntegrityViolationException ex =
                 new DataIntegrityViolationException("duplicate key", new RuntimeException("root cause"));

@@ -23,6 +23,7 @@ import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.EnableTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
+import com.shivankkapoor.aldrop.Exception.DeviceBindingRequiredException;
 import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
 import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
 import com.shivankkapoor.aldrop.Exception.InvalidTotpException;
@@ -101,7 +102,8 @@ public class AuthService {
             return challenge;
         }
 
-        LoginResponseDTO response = createSessionResponse(user, platform, platformId);
+        LoginResponseDTO response = createSessionResponse(user, platform, platformId,
+                requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("Login succeeded, userId={}, platformId={}", user.getId(), platformId);
         return response;
     }
@@ -136,13 +138,19 @@ public class AuthService {
             throw new InvalidTotpException();
         }
 
-        totpSession.setConsumedAt(now);
-        totpSessionRepository.save(totpSession);
-
         Platform platform = platformRepository.findById(platformId)
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
 
-        LoginResponseDTO response = createSessionResponse(user, platform, platformId);
+        if (platform.isRequireDeviceBinding()
+                && (isBlank(requestDTO.getIpAddress()) || isBlank(requestDTO.getUserAgent()))) {
+            throw new DeviceBindingRequiredException();
+        }
+
+        totpSession.setConsumedAt(now);
+        totpSessionRepository.save(totpSession);
+
+        LoginResponseDTO response = createSessionResponse(user, platform, platformId,
+                requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("TOTP verification succeeded, totpSessionId={}, userId={}, platformId={}",
                 totpSession.getId(), user.getId(), platformId);
         return response;
@@ -194,6 +202,12 @@ public class AuthService {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
         User user = resolveActiveUser(session, "validate");
 
+        Platform platform = platformRepository.findById(platformId)
+                .orElseThrow(() -> new PlatformNotFoundException(platformId));
+        if (platform.isRequireDeviceBinding()) {
+            enforceDeviceBinding(session, requestDTO.getIpAddress(), requestDTO.getUserAgent());
+        }
+
         Session saved = sessionRepository.save(session);
         log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
 
@@ -228,7 +242,12 @@ public class AuthService {
                 );
     }
 
-    private LoginResponseDTO createSessionResponse(User user, Platform platform, UUID platformId) {
+    private LoginResponseDTO createSessionResponse(User user, Platform platform, UUID platformId,
+            String ipAddress, String userAgent) {
+        if (platform.isRequireDeviceBinding() && (isBlank(ipAddress) || isBlank(userAgent))) {
+            throw new DeviceBindingRequiredException();
+        }
+
         OffsetDateTime now = OffsetDateTime.now();
         Integer maxSessionsPerUser = platform.getMaxSessionsPerUser();
         if (maxSessionsPerUser != null) {
@@ -252,6 +271,8 @@ public class AuthService {
         session.setPlatformId(platformId);
         session.setCreatedAt(now);
         session.setExpiresAt(now.plus(platform.getSessionTtl()));
+        session.setIpAddress(ipAddress);
+        session.setUserAgent(userAgent);
 
         Session saved = sessionRepository.save(session);
         log.info("Session created, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
@@ -288,6 +309,20 @@ public class AuthService {
         }
 
         return session;
+    }
+
+    private void enforceDeviceBinding(Session session, String ipAddress, String userAgent) {
+        if (isBlank(ipAddress) || isBlank(userAgent)) {
+            throw new DeviceBindingRequiredException();
+        }
+        if (!ipAddress.equals(session.getIpAddress()) || !userAgent.equals(session.getUserAgent())) {
+            log.warn("Session resolution rejected for validate, device mismatch, sessionId={}", session.getId());
+            throw new InvalidSessionException();
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private User resolveActiveUser(Session session, String action) {
