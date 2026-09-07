@@ -398,3 +398,16 @@ Scenario: verify-totp locks out the challenge after five failed attempts
     And request { totpToken: '#(totpToken)', code: '#(totpCode(secret))' }
     When method post
     Then status 401
+
+Scenario: totp enable and confirm reject an invalid session token
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#("garbage-token-" + randomSuffix)' }
+    When method post
+    Then status 401
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#("garbage-token-" + randomSuffix)', code: '123456' }
+    When method post
+    Then status 401

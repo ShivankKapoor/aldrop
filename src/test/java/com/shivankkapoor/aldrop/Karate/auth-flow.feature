@@ -338,3 +338,186 @@ Scenario: validate rejects a token after the session ttl has expired
     Then status 401
 
     * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: ttlPlatformId })
+
+Scenario: validate rejects a blank token and an unknown token
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '' }
+    When method post
+    Then status 400
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#("garbage-token-" + randomSuffix)' }
+    When method post
+    Then status 401
+
+Scenario: logout and logout-all are idempotent for an unknown token
+    Given path 'auth/logout'
+    And header Authorization = platformAuth
+    And request { token: '#("garbage-token-" + randomSuffix)' }
+    When method post
+    Then status 204
+
+    Given path 'auth/logout-all'
+    And header Authorization = platformAuth
+    And request { token: '#("garbage-token-" + randomSuffix)' }
+    When method post
+    Then status 204
+
+Scenario: a platform's api key cannot logout another platform's session token
+    Given path 'platform/create'
+    And header Authorization = adminAuth
+    And request { name: '#("karate-other-" + randomSuffix)' }
+    When method post
+    Then status 201
+    * def otherPlatformId = response.id
+    * def otherPlatformAuth = 'Bearer ' + response.apiKey
+
+    * def username = 'kim-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def token = response.token
+
+    Given path 'auth/logout'
+    And header Authorization = otherPlatformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 204
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: otherPlatformId })
+
+Scenario: register is rejected while the platform is deactivated
+    Given path 'platform', platformId, 'status'
+    And header Authorization = adminAuth
+    And request { isActive: false }
+    When method patch
+    Then status 200
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#("liam-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 401
+
+Scenario: platform status update reactivates, rejects an unknown id and an invalid body
+    Given path 'platform', platformId, 'status'
+    And header Authorization = adminAuth
+    And request { isActive: false }
+    When method patch
+    Then status 200
+    And match response.active == false
+
+    Given path 'platform', platformId, 'status'
+    And header Authorization = adminAuth
+    And request { isActive: true }
+    When method patch
+    Then status 200
+    And match response.active == true
+
+    Given path 'platform', java.util.UUID.randomUUID() + '', 'status'
+    And header Authorization = adminAuth
+    And request { isActive: true }
+    When method patch
+    Then status 404
+
+    Given path 'platform', platformId, 'status'
+    And header Authorization = adminAuth
+    And request {}
+    When method patch
+    Then status 400
+
+Scenario: delete rejects an unknown platform id
+    Given path 'platform', java.util.UUID.randomUUID() + ''
+    And header Authorization = adminAuth
+    When method delete
+    Then status 404
+
+Scenario: monitor endpoint is reachable
+    Given path 'monitor'
+    When method get
+    Then status 200
+    And match response.status == 'Up'
+
+Scenario: login rejects a nonexistent username
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#("nobody-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 401
+
+Scenario: login rejects a blank username and a blank password
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '', password: 'correcthorse123' }
+    When method post
+    Then status 400
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#("mia-" + randomSuffix)', password: '' }
+    When method post
+    Then status 400
+
+Scenario: platform create rejects a blank name
+    Given path 'platform/create'
+    And header Authorization = adminAuth
+    And request { name: '' }
+    When method post
+    Then status 400
+
+Scenario: a platform's api key cannot logout-all another platform's session token
+    Given path 'platform/create'
+    And header Authorization = adminAuth
+    And request { name: '#("karate-other-" + randomSuffix)' }
+    When method post
+    Then status 201
+    * def otherPlatformId = response.id
+    * def otherPlatformAuth = 'Bearer ' + response.apiKey
+
+    * def username = 'noah-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def token = response.token
+
+    Given path 'auth/logout-all'
+    And header Authorization = otherPlatformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 204
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: otherPlatformId })
