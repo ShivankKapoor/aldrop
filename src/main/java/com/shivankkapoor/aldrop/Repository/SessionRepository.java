@@ -2,6 +2,8 @@ package com.shivankkapoor.aldrop.Repository;
 
 import com.shivankkapoor.aldrop.Data.Session;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -13,4 +15,8 @@ public interface SessionRepository extends JpaRepository<Session, UUID> {
     List<Session> findByUserId(UUID userId);
     List<Session> findByUserIdAndPlatformId(UUID userId, UUID platformId);
     List<Session> findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(UUID userId, UUID platformId, OffsetDateTime now);
+
+    @Modifying
+    @Query("DELETE FROM Session s WHERE s.expiresAt < :now")
+    int deleteAllByExpiresAtBefore(OffsetDateTime now);
 }
