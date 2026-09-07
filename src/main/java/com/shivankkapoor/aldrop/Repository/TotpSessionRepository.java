@@ -16,4 +16,8 @@ public interface TotpSessionRepository extends JpaRepository<TotpSession, UUID> 
     @Modifying
     @Query("DELETE FROM TotpSession t WHERE t.expiresAt < :now")
     int deleteAllByExpiresAtBefore(OffsetDateTime now);
+
+    @Modifying
+    @Query("DELETE FROM TotpSession t WHERE t.userId = :userId AND t.platformId = :platformId AND t.consumedAt IS NULL")
+    int deleteUnconsumedByUserIdAndPlatformId(UUID userId, UUID platformId);
 }

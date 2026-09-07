@@ -210,12 +210,59 @@ class AuthServiceTest {
         User inactiveUser = activeUser();
         inactiveUser.setActive(false);
         when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(inactiveUser));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(platformId, request))
                 .isInstanceOf(InvalidCredentialsException.class);
 
-        verify(passwordHasher, never()).matches(any(), any());
+        verify(passwordHasher).matches("correcthorse", "hashed-password");
         verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void verifiesPasswordAgainstDummyHashWhenUserNotFoundToAvoidTimingOracle() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("ghost");
+        request.setPassword("whatever");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "ghost")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(platformId, request))
+                .isInstanceOf(InvalidCredentialsException.class);
+
+        verify(passwordHasher).matches("whatever", null);
+    }
+
+    @Test
+    void loginCheckLoginRateLimitBeforeLookingUpUser() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+
+        doThrow(new TooManyAttemptsException()).when(totpRateLimiter).checkLoginRateLimit(platformId + ":alice");
+
+        assertThatThrownBy(() -> authService.login(platformId, request))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        verify(userRepository, never()).findByPlatformIdAndUsername(any(), any());
+    }
+
+    @Test
+    void loginResetsLoginRateLimitOnSuccessfulPasswordCheck() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithLimit(null)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("generated-token");
+        when(tokenHasher.hash("generated-token")).thenReturn("hashed-generated-token");
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.login(platformId, request);
+
+        verify(totpRateLimiter).resetLoginRateLimit(platformId + ":alice");
     }
 
     @Test
@@ -793,6 +840,25 @@ class AuthServiceTest {
     }
 
     @Test
+    void loginInvalidatesOutstandingUnconsumedTotpChallengesBeforeIssuingNewOne() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setUsername("alice");
+        request.setPassword("correcthorse");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice"))
+                .thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
+        when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
+        when(tokenGenerator.generate(anyInt())).thenReturn("totp-challenge-token");
+        when(tokenHasher.hash("totp-challenge-token")).thenReturn("hashed-totp-challenge-token");
+        when(totpSessionRepository.save(any(TotpSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.login(platformId, request);
+
+        verify(totpSessionRepository).deleteUnconsumedByUserIdAndPlatformId(userId, platformId);
+    }
+
+    @Test
     void loginCreatesSessionWhenPlatformSupportsTotpButUserHasNotEnabledIt() {
         LoginRequestDTO request = new LoginRequestDTO();
         request.setUsername("alice");
@@ -836,6 +902,28 @@ class AuthServiceTest {
 
         assertThat(response.getToken()).isEqualTo("session-token");
         assertThat(totpSession.getConsumedAt()).isNotNull();
+        verify(totpRateLimiter).checkVerifyTotpRateLimit(userId);
+        verify(totpRateLimiter).resetVerifyTotpRateLimit(userId);
+    }
+
+    @Test
+    void verifyTotpThrowsWhenPerUserRateLimited() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+
+        TotpSession totpSession = activeTotpSession();
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
+        doThrow(new TooManyAttemptsException()).when(totpRateLimiter).checkVerifyTotpRateLimit(userId);
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        verify(totpManager, never()).verifyCode(any(), any());
+        verify(totpSessionRepository, never()).save(any());
     }
 
     @Test

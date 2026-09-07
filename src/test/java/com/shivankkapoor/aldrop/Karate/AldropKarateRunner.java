@@ -5,7 +5,7 @@ import com.intuit.karate.junit5.Karate;
 /**
  * Deliberately not named *Test/*Tests so Surefire's default include
  * pattern skips it during `mvn test` (CI). These hit a live aldrop
- * instance on localhost:4000 plus the real LAN Postgres/Redis, so
+ * instance on localhost:4000 plus the real LAN Postgres, so
  * run manually (e.g. `./mvnw test -Dtest=AldropKarateRunner`) with
  * the app already started. Both feature paths are run from a single
  * Karate.run(...) call, deliberately, so they share one Suite and

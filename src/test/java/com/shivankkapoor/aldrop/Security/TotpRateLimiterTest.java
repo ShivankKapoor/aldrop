@@ -67,4 +67,73 @@ class TotpRateLimiterTest {
         assertThatCode(() -> rateLimiter.checkConfirmRateLimit(userTwo))
                 .doesNotThrowAnyException();
     }
+
+    @Test
+    void allowsUpToFiveLoginAttemptsThenRejects() {
+        String key = UUID.randomUUID() + ":alice";
+
+        assertThatCode(() -> {
+            for (int i = 0; i < 5; i++) {
+                rateLimiter.checkLoginRateLimit(key);
+            }
+        }).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> rateLimiter.checkLoginRateLimit(key))
+                .isInstanceOf(TooManyAttemptsException.class);
+    }
+
+    @Test
+    void resetLoginRateLimitClearsTheCounter() {
+        String key = UUID.randomUUID() + ":alice";
+
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.checkLoginRateLimit(key);
+        }
+        rateLimiter.resetLoginRateLimit(key);
+
+        assertThatCode(() -> rateLimiter.checkLoginRateLimit(key))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void differentLoginKeysHaveIndependentLimits() {
+        String keyOne = UUID.randomUUID() + ":alice";
+        String keyTwo = UUID.randomUUID() + ":alice";
+
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.checkLoginRateLimit(keyOne);
+        }
+        assertThatThrownBy(() -> rateLimiter.checkLoginRateLimit(keyOne))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        assertThatCode(() -> rateLimiter.checkLoginRateLimit(keyTwo))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void allowsUpToFiveVerifyTotpAttemptsThenRejects() {
+        UUID userId = UUID.randomUUID();
+
+        assertThatCode(() -> {
+            for (int i = 0; i < 5; i++) {
+                rateLimiter.checkVerifyTotpRateLimit(userId);
+            }
+        }).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> rateLimiter.checkVerifyTotpRateLimit(userId))
+                .isInstanceOf(TooManyAttemptsException.class);
+    }
+
+    @Test
+    void resetVerifyTotpRateLimitClearsTheCounter() {
+        UUID userId = UUID.randomUUID();
+
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.checkVerifyTotpRateLimit(userId);
+        }
+        rateLimiter.resetVerifyTotpRateLimit(userId);
+
+        assertThatCode(() -> rateLimiter.checkVerifyTotpRateLimit(userId))
+                .doesNotThrowAnyException();
+    }
 }

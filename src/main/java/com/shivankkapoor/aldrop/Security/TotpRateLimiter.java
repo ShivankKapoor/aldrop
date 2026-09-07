@@ -17,6 +17,8 @@ public class TotpRateLimiter {
 
     private final Cache<UUID, AtomicInteger> enableAttempts = newCache();
     private final Cache<UUID, AtomicInteger> confirmAttempts = newCache();
+    private final Cache<String, AtomicInteger> loginAttempts = newCache();
+    private final Cache<UUID, AtomicInteger> verifyTotpAttempts = newCache();
 
     public void checkEnableRateLimit(UUID userId) {
         checkRateLimit(enableAttempts, userId);
@@ -26,9 +28,25 @@ public class TotpRateLimiter {
         checkRateLimit(confirmAttempts, userId);
     }
 
-    private void checkRateLimit(Cache<UUID, AtomicInteger> attempts, UUID userId) {
+    public void checkLoginRateLimit(String platformAndUsernameKey) {
+        checkRateLimit(loginAttempts, platformAndUsernameKey);
+    }
+
+    public void resetLoginRateLimit(String platformAndUsernameKey) {
+        loginAttempts.invalidate(platformAndUsernameKey);
+    }
+
+    public void checkVerifyTotpRateLimit(UUID userId) {
+        checkRateLimit(verifyTotpAttempts, userId);
+    }
+
+    public void resetVerifyTotpRateLimit(UUID userId) {
+        verifyTotpAttempts.invalidate(userId);
+    }
+
+    private <K> void checkRateLimit(Cache<K, AtomicInteger> attempts, K key) {
         int count = attempts.asMap()
-                .computeIfAbsent(userId, key -> new AtomicInteger(0))
+                .computeIfAbsent(key, k -> new AtomicInteger(0))
                 .incrementAndGet();
 
         if (count > MAX_ATTEMPTS) {
@@ -36,7 +54,7 @@ public class TotpRateLimiter {
         }
     }
 
-    private static Cache<UUID, AtomicInteger> newCache() {
+    private static <K> Cache<K, AtomicInteger> newCache() {
         return Caffeine.newBuilder()
                 .expireAfterWrite(WINDOW)
                 .build();

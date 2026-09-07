@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.shivankkapoor.aldrop.Data.Platform;
@@ -43,6 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
@@ -82,16 +84,24 @@ public class AuthService {
     @Autowired
     private TotpRateLimiter totpRateLimiter;
 
+    @Transactional
     public LoginResponseDTO login(UUID platformId, LoginRequestDTO requestDTO) {
         String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
+        String loginRateLimitKey = platformId + ":" + username;
+        totpRateLimiter.checkLoginRateLimit(loginRateLimitKey);
 
-        User user = userRepository.findByPlatformIdAndUsername(platformId, username)
-                .orElseThrow(InvalidCredentialsException::new);
+        Optional<User> maybeUser = userRepository.findByPlatformIdAndUsername(platformId, username);
+        boolean passwordMatches = passwordHasher.matches(
+                requestDTO.getPassword(),
+                maybeUser.map(User::getPasswordHash).orElse(null));
 
-        if (!user.isActive() || !passwordHasher.matches(requestDTO.getPassword(), user.getPasswordHash())) {
+        if (maybeUser.isEmpty() || !passwordMatches || !maybeUser.get().isActive()) {
             log.warn("Login rejected, platformId={}, username={}", platformId, username);
             throw new InvalidCredentialsException();
         }
+
+        User user = maybeUser.get();
+        totpRateLimiter.resetLoginRateLimit(loginRateLimitKey);
 
         Platform platform = platformRepository.findById(platformId)
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
@@ -127,6 +137,8 @@ public class AuthService {
             throw new InvalidTotpException();
         }
 
+        totpRateLimiter.checkVerifyTotpRateLimit(user.getId());
+
         boolean validCode = totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())
                 || consumeBackupCodeIfMatches(user, requestDTO.getCode());
 
@@ -148,6 +160,7 @@ public class AuthService {
 
         totpSession.setConsumedAt(now);
         totpSessionRepository.save(totpSession);
+        totpRateLimiter.resetVerifyTotpRateLimit(user.getId());
 
         LoginResponseDTO response = createSessionResponse(user, platform, platformId,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
@@ -281,6 +294,12 @@ public class AuthService {
     }
 
     private LoginResponseDTO issueTotpChallenge(User user, UUID platformId) {
+        int invalidated = totpSessionRepository.deleteUnconsumedByUserIdAndPlatformId(user.getId(), platformId);
+        if (invalidated > 0) {
+            log.info("Invalidated {} outstanding TOTP challenge(s), userId={}, platformId={}",
+                    invalidated, user.getId(), platformId);
+        }
+
         String rawToken = tokenGenerator.generate(SESSION_TOKEN_BYTES);
         OffsetDateTime now = OffsetDateTime.now();
 
