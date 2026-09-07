@@ -2,7 +2,6 @@ package com.shivankkapoor.aldrop.Service;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -118,6 +117,7 @@ public class AuthService {
         return response;
     }
 
+    @Transactional(noRollbackFor = InvalidTotpException.class)
     public LoginResponseDTO verifyTotp(UUID platformId, VerifyTotpRequestDTO requestDTO) {
         TotpSession totpSession = totpSessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getTotpToken()))
                 .filter(ts -> ts.getPlatformId().equals(platformId))
@@ -158,8 +158,12 @@ public class AuthService {
             throw new DeviceBindingRequiredException();
         }
 
-        totpSession.setConsumedAt(now);
-        totpSessionRepository.save(totpSession);
+        int consumed = totpSessionRepository.markConsumedIfUnconsumed(totpSession.getId(), now);
+        if (consumed == 0) {
+            log.warn("TOTP verification lost the consumption race, totpSessionId={}, userId={}, platformId={}",
+                    totpSession.getId(), user.getId(), platformId);
+            throw new InvalidTotpException();
+        }
         totpRateLimiter.resetVerifyTotpRateLimit(user.getId());
 
         LoginResponseDTO response = createSessionResponse(user, platform, platformId,
@@ -169,6 +173,7 @@ public class AuthService {
         return response;
     }
 
+    @Transactional
     public EnableTotpResponseDTO enableTotp(UUID platformId, EnableTotpRequestDTO requestDTO) {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "totp-enable");
         User user = resolveActiveUser(session, "totp-enable");
@@ -192,10 +197,15 @@ public class AuthService {
         return new EnableTotpResponseDTO(secret, totpManager.buildOtpAuthUri(secret, user.getUsername()));
     }
 
+    @Transactional
     public ConfirmTotpResponseDTO confirmTotp(UUID platformId, ConfirmTotpRequestDTO requestDTO) {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "totp-confirm");
         User user = resolveActiveUser(session, "totp-confirm");
         totpRateLimiter.checkConfirmRateLimit(user.getId());
+
+        if (user.isTotpEnabled()) {
+            throw new TotpAlreadyEnabledException();
+        }
 
         if (!totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())) {
             log.warn("TOTP confirm rejected, invalid code, userId={}, platformId={}", user.getId(), platformId);
@@ -211,6 +221,7 @@ public class AuthService {
         return new ConfirmTotpResponseDTO(Arrays.asList(backupCodes));
     }
 
+    @Transactional
     public ValidateSessionResponseDTO validate(UUID platformId, ValidateSessionRequestDTO requestDTO) {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
         User user = resolveActiveUser(session, "validate");
@@ -227,6 +238,7 @@ public class AuthService {
         return new ValidateSessionResponseDTO(saved.getUserId(), saved.getExpiresAt());
     }
 
+    @Transactional
     public void logout(UUID platformId, LogoutRequestDTO requestDTO) {
         sessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getToken()))
                 .filter(session -> session.getPlatformId().equals(platformId))
@@ -240,6 +252,7 @@ public class AuthService {
                 );
     }
 
+    @Transactional
     public void logoutAll(UUID platformId, LogoutAllRequestDTO requestDTO) {
         sessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getToken()))
                 .filter(session -> session.getPlatformId().equals(platformId))
@@ -366,18 +379,6 @@ public class AuthService {
     }
 
     private boolean consumeBackupCodeIfMatches(User user, String code) {
-        String[] codes = user.getTotpBackupCodes();
-        if (codes == null) {
-            return false;
-        }
-
-        List<String> remaining = new ArrayList<>(Arrays.asList(codes));
-        if (!remaining.remove(code)) {
-            return false;
-        }
-
-        user.setTotpBackupCodes(remaining.toArray(new String[0]));
-        userRepository.save(user);
-        return true;
+        return userRepository.consumeBackupCodeIfPresent(user.getId(), code) > 0;
     }
 }

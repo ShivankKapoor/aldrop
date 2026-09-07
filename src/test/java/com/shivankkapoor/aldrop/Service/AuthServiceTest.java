@@ -892,7 +892,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
-        when(totpSessionRepository.save(any(TotpSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(1);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
         when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
         when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
@@ -901,9 +901,31 @@ class AuthServiceTest {
         LoginResponseDTO response = authService.verifyTotp(platformId, request);
 
         assertThat(response.getToken()).isEqualTo("session-token");
-        assertThat(totpSession.getConsumedAt()).isNotNull();
+        verify(totpSessionRepository).markConsumedIfUnconsumed(eq(totpSession.getId()), any());
         verify(totpRateLimiter).checkVerifyTotpRateLimit(userId);
         verify(totpRateLimiter).resetVerifyTotpRateLimit(userId);
+    }
+
+    @Test
+    void verifyTotpThrowsWhenConsumptionRaceIsLost() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+
+        TotpSession totpSession = activeTotpSession();
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
+        when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(0);
+        when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(InvalidTotpException.class);
+
+        verify(sessionRepository, never()).save(any());
+        verify(totpRateLimiter, never()).resetVerifyTotpRateLimit(any());
     }
 
     @Test
@@ -939,7 +961,8 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(totpManager.verifyCode("SEED123", "backup-code-1")).thenReturn(false);
-        when(totpSessionRepository.save(any(TotpSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.consumeBackupCodeIfPresent(userId, "backup-code-1")).thenReturn(1);
+        when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(1);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
         when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
         when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
@@ -948,8 +971,28 @@ class AuthServiceTest {
         LoginResponseDTO response = authService.verifyTotp(platformId, request);
 
         assertThat(response.getToken()).isEqualTo("session-token");
-        assertThat(user.getTotpBackupCodes()).containsExactly("backup-code-2");
-        verify(userRepository).save(user);
+        verify(userRepository).consumeBackupCodeIfPresent(userId, "backup-code-1");
+    }
+
+    @Test
+    void verifyTotpThrowsWhenBackupCodeAlreadyConsumedConcurrently() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("backup-code-1");
+
+        TotpSession totpSession = activeTotpSession();
+        User user = activeUserWithTotpEnabled("SEED123", "backup-code-2");
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(totpManager.verifyCode("SEED123", "backup-code-1")).thenReturn(false);
+        when(userRepository.consumeBackupCodeIfPresent(userId, "backup-code-1")).thenReturn(0);
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(InvalidTotpException.class);
+
+        verify(sessionRepository, never()).save(any());
     }
 
     @Test
@@ -1074,6 +1117,7 @@ class AuthServiceTest {
         verify(sessionRepository, never()).save(any());
         assertThat(totpSession.getConsumedAt()).isNull();
         verify(totpSessionRepository, never()).save(any());
+        verify(totpSessionRepository, never()).markConsumedIfUnconsumed(any(), any());
     }
 
     @Test
@@ -1090,7 +1134,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
-        when(totpSessionRepository.save(any(TotpSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(1);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
         when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
         when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
@@ -1289,6 +1333,31 @@ class AuthServiceTest {
                 .isInstanceOf(TooManyAttemptsException.class);
 
         assertThat(user.isTotpEnabled()).isFalse();
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void confirmTotpThrowsWhenAlreadyEnabled() {
+        ConfirmTotpRequestDTO request = new ConfirmTotpRequestDTO();
+        request.setToken("session-token");
+        request.setCode("123456");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        User user = activeUserWithTotpEnabled("EXISTING");
+
+        when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
+        when(sessionRepository.findByTokenHash("hashed-session-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.confirmTotp(platformId, request))
+                .isInstanceOf(TotpAlreadyEnabledException.class);
+
+        verify(totpManager, never()).verifyCode(any(), any());
         verify(userRepository, never()).save(any());
     }
 
