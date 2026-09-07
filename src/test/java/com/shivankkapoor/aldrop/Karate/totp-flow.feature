@@ -411,3 +411,118 @@ Scenario: totp enable and confirm reject an invalid session token
     And request { token: '#("garbage-token-" + randomSuffix)', code: '123456' }
     When method post
     Then status 401
+
+Scenario: totp enable is rate limited after five calls
+    * def username = 'liam-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def token = response.token
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+
+    # sixth call within the window is rate limited
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 429
+
+Scenario: totp confirm is rate limited after five attempts
+    * def username = 'mona-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def token = response.token
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(token)' }
+    When method post
+    Then status 200
+    * def secret = response.secret
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    # sixth attempt within the window is rate limited, even with the correct code
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(token)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 429

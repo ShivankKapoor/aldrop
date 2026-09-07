@@ -76,6 +76,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(TooManyAttemptsException.class)
+    public ResponseEntity<Map<String, String>> handleTooManyAttempts(TooManyAttemptsException ex){
+        log.warn(ex.getMessage());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex){
         log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());

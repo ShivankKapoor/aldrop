@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +41,7 @@ import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
 import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
 import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
 import com.shivankkapoor.aldrop.Exception.InvalidTotpException;
+import com.shivankkapoor.aldrop.Exception.TooManyAttemptsException;
 import com.shivankkapoor.aldrop.Exception.TotpAlreadyEnabledException;
 import com.shivankkapoor.aldrop.Exception.TotpNotAvailableException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
@@ -50,6 +52,7 @@ import com.shivankkapoor.aldrop.Security.PasswordHasher;
 import com.shivankkapoor.aldrop.Security.TokenGenerator;
 import com.shivankkapoor.aldrop.Security.TokenHasher;
 import com.shivankkapoor.aldrop.Security.TotpManager;
+import com.shivankkapoor.aldrop.Security.TotpRateLimiter;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -77,6 +80,9 @@ class AuthServiceTest {
 
     @Mock
     private TotpManager totpManager;
+
+    @Mock
+    private TotpRateLimiter totpRateLimiter;
 
     @InjectMocks
     private AuthService authService;
@@ -812,6 +818,29 @@ class AuthServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getTotpSeed()).isEqualTo("NEWSECRET");
+        verify(totpRateLimiter).checkEnableRateLimit(userId);
+    }
+
+    @Test
+    void enableTotpThrowsWhenRateLimited() {
+        EnableTotpRequestDTO request = new EnableTotpRequestDTO();
+        request.setToken("session-token");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
+        when(sessionRepository.findByTokenHash("hashed-session-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(activeUser()));
+        doThrow(new TooManyAttemptsException()).when(totpRateLimiter).checkEnableRateLimit(userId);
+
+        assertThatThrownBy(() -> authService.enableTotp(platformId, request))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -899,6 +928,34 @@ class AuthServiceTest {
         assertThat(user.isTotpEnabled()).isTrue();
         assertThat(user.getTotpBackupCodes()).hasSize(8);
         verify(userRepository).save(user);
+        verify(totpRateLimiter).checkConfirmRateLimit(userId);
+    }
+
+    @Test
+    void confirmTotpThrowsWhenRateLimited() {
+        ConfirmTotpRequestDTO request = new ConfirmTotpRequestDTO();
+        request.setToken("session-token");
+        request.setCode("123456");
+
+        Session session = new Session();
+        session.setId(UUID.randomUUID());
+        session.setUserId(userId);
+        session.setPlatformId(platformId);
+        session.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        User user = activeUser();
+        user.setTotpSeed("PENDINGSECRET");
+
+        when(tokenHasher.hash("session-token")).thenReturn("hashed-session-token");
+        when(sessionRepository.findByTokenHash("hashed-session-token")).thenReturn(Optional.of(session));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        doThrow(new TooManyAttemptsException()).when(totpRateLimiter).checkConfirmRateLimit(userId);
+
+        assertThatThrownBy(() -> authService.confirmTotp(platformId, request))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        assertThat(user.isTotpEnabled()).isFalse();
+        verify(userRepository, never()).save(any());
     }
 
     @Test

@@ -37,6 +37,7 @@ import com.shivankkapoor.aldrop.Security.PasswordHasher;
 import com.shivankkapoor.aldrop.Security.TokenGenerator;
 import com.shivankkapoor.aldrop.Security.TokenHasher;
 import com.shivankkapoor.aldrop.Security.TotpManager;
+import com.shivankkapoor.aldrop.Security.TotpRateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +77,9 @@ public class AuthService {
 
     @Autowired
     private TotpManager totpManager;
+
+    @Autowired
+    private TotpRateLimiter totpRateLimiter;
 
     public LoginResponseDTO login(UUID platformId, LoginRequestDTO requestDTO) {
         String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
@@ -147,6 +151,7 @@ public class AuthService {
     public EnableTotpResponseDTO enableTotp(UUID platformId, EnableTotpRequestDTO requestDTO) {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "totp-enable");
         User user = resolveActiveUser(session, "totp-enable");
+        totpRateLimiter.checkEnableRateLimit(user.getId());
 
         Platform platform = platformRepository.findById(platformId)
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
@@ -169,6 +174,7 @@ public class AuthService {
     public ConfirmTotpResponseDTO confirmTotp(UUID platformId, ConfirmTotpRequestDTO requestDTO) {
         Session session = resolveActiveSession(platformId, requestDTO.getToken(), "totp-confirm");
         User user = resolveActiveUser(session, "totp-confirm");
+        totpRateLimiter.checkConfirmRateLimit(user.getId());
 
         if (!totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())) {
             log.warn("TOTP confirm rejected, invalid code, userId={}, platformId={}", user.getId(), platformId);

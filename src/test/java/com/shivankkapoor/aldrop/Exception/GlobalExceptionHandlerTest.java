@@ -110,6 +110,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void mapsTooManyAttemptsToTooManyRequests() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleTooManyAttempts(new TooManyAttemptsException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getBody()).containsEntry("error", "Too many attempts, please try again later");
+    }
+
+    @Test
     void mapsDataIntegrityViolationToConflict() {
         DataIntegrityViolationException ex =
                 new DataIntegrityViolationException("duplicate key", new RuntimeException("root cause"));
