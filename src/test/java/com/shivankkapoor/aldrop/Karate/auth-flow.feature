@@ -230,6 +230,15 @@ Scenario: platform admin endpoints reject missing or wrong admin auth
     When method post
     Then status 401
 
+    Given path 'platform', platformId, 'rotate-key'
+    When method patch
+    Then status 401
+
+    Given path 'platform', platformId, 'rotate-key'
+    And header Authorization = 'Basic ' + Base64.getEncoder().encodeToString(('wrong:' + randomSuffix).getBytes())
+    When method patch
+    Then status 401
+
 Scenario: a platform's api key cannot validate another platform's session token
     Given path 'platform/create'
     And header Authorization = adminAuth
@@ -450,6 +459,44 @@ Scenario: delete rejects an unknown platform id
     When method delete
     Then status 404
 
+Scenario: platform api key rotation issues a new key that invalidates the old one
+    * def username = 'olivia-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'platform', platformId, 'rotate-key'
+    And header Authorization = adminAuth
+    When method patch
+    Then status 200
+    And match response.id == platformId
+    And match response.apiKey == '#present'
+    * def newPlatformAuth = 'Bearer ' + response.apiKey
+
+    # the old key no longer authenticates
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 401
+
+    # the new key works
+    Given path 'auth/login'
+    And header Authorization = newPlatformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+
+Scenario: rotate-key rejects an unknown platform id
+    Given path 'platform', java.util.UUID.randomUUID() + '', 'rotate-key'
+    And header Authorization = adminAuth
+    When method patch
+    Then status 404
+
 Scenario: monitor endpoint is reachable
     Given path 'monitor'
     When method get
@@ -475,6 +522,107 @@ Scenario: login rejects a blank username and a blank password
     And request { username: '#("mia-" + randomSuffix)', password: '' }
     When method post
     Then status 400
+
+Scenario: login is rate limited after five failed attempts
+    * def username = 'penny-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    # sixth attempt within the window is rate limited, even with the correct password
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 429
+
+Scenario: login rate limit resets after a successful login
+    * def username = 'quinn-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    # a correct login resets the counter
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+
+    # four more wrong attempts after the reset still get a normal 401, not 429
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'wrongpassword' }
+    When method post
+    Then status 401
 
 Scenario: platform create rejects a blank name
     Given path 'platform/create'

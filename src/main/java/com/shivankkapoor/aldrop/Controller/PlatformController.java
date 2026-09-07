@@ -4,6 +4,7 @@ import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.UpdatePlatformStatusRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.CreatePlatformResponseDTO;
+import com.shivankkapoor.aldrop.DTO.Response.RotatePlatformKeyResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.UpdatePlatformStatusResponseDTO;
 import com.shivankkapoor.aldrop.Service.PlatformService;
 import jakarta.validation.Valid;
@@ -60,6 +61,20 @@ public class PlatformController {
                 platform.getId(),
                 platform.getName(),
                 platform.isActive()
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/{id}/rotate-key")
+    public ResponseEntity<RotatePlatformKeyResponseDTO> rotateKey(@PathVariable UUID id){
+        log.info("Rotate platform API key requested, id={}", id);
+        Platform platform = platformService.rotateApiKey(id);
+
+        RotatePlatformKeyResponseDTO response = new RotatePlatformKeyResponseDTO(
+                platform.getId(),
+                platform.getName(),
+                platform.getApiKey()
         );
 
         return ResponseEntity.ok(response);

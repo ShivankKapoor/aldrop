@@ -399,6 +399,168 @@ Scenario: verify-totp locks out the challenge after five failed attempts
     When method post
     Then status 401
 
+Scenario: starting a new login invalidates the previous unconsumed totp challenge
+    * def username = 'rosa-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def firstToken = response.token
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)' }
+    When method post
+    Then status 200
+    * def secret = response.secret
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 200
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpTokenOne = response.totpToken
+
+    # a second login before verifying the first invalidates it
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpTokenTwo = response.totpToken
+
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpTokenOne)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpTokenTwo)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 200
+
+Scenario: verify-totp per-user rate limit persists across separate login challenges
+    * def username = 'sam-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def firstToken = response.token
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)' }
+    When method post
+    Then status 200
+    * def secret = response.secret
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 200
+
+    # five wrong attempts, each against its own fresh challenge, still count against
+    # the per-user limit even though no single challenge sees more than one attempt
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken1 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken1)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken2 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken2)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken3 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken3)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken4 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken4)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken5 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken5)', code: '#(wrongCode(secret))' }
+    When method post
+    Then status 401
+
+    # a sixth fresh challenge is still rate limited, even with the correct code
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken6 = response.totpToken
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken6)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 429
+
 Scenario: totp enable and confirm reject an invalid session token
     Given path 'auth/totp/enable'
     And header Authorization = platformAuth

@@ -60,6 +60,17 @@ public class PlatformService {
         return saved;
     }
 
+    public Platform rotateApiKey(UUID id){
+        Platform platform = platformRepository.findById(id)
+                .orElseThrow(() -> new PlatformNotFoundException(id));
+
+        platform.setApiKey(tokenGenerator.generate(API_KEY_BYTES));
+
+        Platform saved = platformRepository.save(platform);
+        log.info("Platform API key rotated, id={}, name={}", saved.getId(), saved.getName());
+        return saved;
+    }
+
     public void delete(UUID id){
         Platform platform = platformRepository.findById(id)
                 .orElseThrow(() -> new PlatformNotFoundException(id));

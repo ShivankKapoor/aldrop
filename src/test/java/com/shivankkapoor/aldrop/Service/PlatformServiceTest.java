@@ -120,6 +120,63 @@ class PlatformServiceTest {
     }
 
     @Test
+    void rotatesApiKeyWhenPlatformExists() {
+        UUID id = UUID.randomUUID();
+        Platform platform = new Platform();
+        platform.setId(id);
+        platform.setApiKey("old-api-key");
+
+        when(platformRepository.findById(id)).thenReturn(Optional.of(platform));
+        when(platformRepository.save(any(Platform.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenGenerator.generate(anyInt())).thenReturn("new-api-key");
+
+        Platform result = platformService.rotateApiKey(id);
+
+        assertThat(result.getApiKey()).isEqualTo("new-api-key");
+        ArgumentCaptor<Platform> captor = ArgumentCaptor.forClass(Platform.class);
+        verify(platformRepository).save(captor.capture());
+        assertThat(captor.getValue().getApiKey()).isEqualTo("new-api-key");
+    }
+
+    @Test
+    void rotateApiKeyLeavesOtherPlatformFieldsUnchanged() {
+        UUID id = UUID.randomUUID();
+        Platform platform = new Platform();
+        platform.setId(id);
+        platform.setName("acme");
+        platform.setApiKey("old-api-key");
+        platform.setSessionTtl(Duration.ofHours(2));
+        platform.setMaxSessionsPerUser(5);
+        platform.setTotpAvailable(true);
+        platform.setRequireDeviceBinding(true);
+        platform.setActive(true);
+
+        when(platformRepository.findById(id)).thenReturn(Optional.of(platform));
+        when(platformRepository.save(any(Platform.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenGenerator.generate(anyInt())).thenReturn("new-api-key");
+
+        Platform result = platformService.rotateApiKey(id);
+
+        assertThat(result.getName()).isEqualTo("acme");
+        assertThat(result.getSessionTtl()).isEqualTo(Duration.ofHours(2));
+        assertThat(result.getMaxSessionsPerUser()).isEqualTo(5);
+        assertThat(result.isTotpAvailable()).isTrue();
+        assertThat(result.isRequireDeviceBinding()).isTrue();
+        assertThat(result.isActive()).isTrue();
+    }
+
+    @Test
+    void throwsWhenRotatingKeyOfUnknownPlatform() {
+        UUID id = UUID.randomUUID();
+        when(platformRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> platformService.rotateApiKey(id))
+                .isInstanceOf(PlatformNotFoundException.class);
+
+        verify(platformRepository, never()).save(any());
+    }
+
+    @Test
     void deletesPlatformWhenItExists() {
         UUID id = UUID.randomUUID();
         Platform platform = new Platform();
