@@ -20,7 +20,17 @@ if podman container exists "$CONTAINER"; then
     podman rm -f "$CONTAINER" > /dev/null
 fi
 
+mkdir -p logs
+TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+LOG_FILE="logs/${CONTAINER}-${TIMESTAMP}.log"
+
 podman run -d --name "$CONTAINER" -p "$PORT:4000" "$IMAGE" > /dev/null
+
+# `podman logs -f` runs on the host (not inside the podman machine VM), so redirecting it here
+# writes straight to the host disk regardless of the VM's mount configuration. It exits on its own
+# once the container's log stream closes (stop.sh removes the container).
+podman logs -f "$CONTAINER" > "$LOG_FILE" 2>&1 &
+disown
 
 # wait for the app rather than reporting success the moment podman returns
 for _ in $(seq 1 60); do
@@ -28,7 +38,7 @@ for _ in $(seq 1 60); do
         echo
         echo "Aldrop is up on http://localhost:$PORT"
         echo "  docs     http://localhost:$PORT/swagger-ui/index.html   (ENV=QA only, platform admin credentials)"
-        echo "  logs     podman logs -f $CONTAINER"
+        echo "  logs     tail -f $LOG_FILE"
         echo "  stop     podman stop $CONTAINER"
         exit 0
     fi

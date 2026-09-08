@@ -11,7 +11,10 @@ REPOSITORY="localhost/aldrop"
 
 # containers must go first: podman refuses to remove an image that any container still references,
 # even a stopped one
-mapfile -t CONTAINERS < <(
+CONTAINERS=()
+while IFS= read -r name; do
+    [ -n "$name" ] && CONTAINERS+=("$name")
+done < <(
     podman ps -a --format '{{.Names}} {{.Image}}' \
         | awk -v repo="^${REPOSITORY}:" '$2 ~ repo { print $1 }'
 )
@@ -25,7 +28,10 @@ else
     done
 fi
 
-mapfile -t IMAGE_TAGS < <(podman images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${REPOSITORY}:" || true)
+IMAGE_TAGS=()
+while IFS= read -r tag; do
+    [ -n "$tag" ] && IMAGE_TAGS+=("$tag")
+done < <(podman images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${REPOSITORY}:" || true)
 
 if [ ${#IMAGE_TAGS[@]} -eq 0 ]; then
     echo "No $REPOSITORY images found"
