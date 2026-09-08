@@ -39,6 +39,7 @@ import com.shivankkapoor.aldrop.Security.TokenGenerator;
 import com.shivankkapoor.aldrop.Security.TokenHasher;
 import com.shivankkapoor.aldrop.Security.TotpManager;
 import com.shivankkapoor.aldrop.Security.TotpRateLimiter;
+import com.shivankkapoor.aldrop.Security.TotpReplayGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,6 +83,9 @@ public class AuthService {
 
     @Autowired
     private TotpRateLimiter totpRateLimiter;
+
+    @Autowired
+    private TotpReplayGuard totpReplayGuard;
 
     @Transactional
     public LoginResponseDTO login(UUID platformId, LoginRequestDTO requestDTO) {
@@ -139,7 +143,8 @@ public class AuthService {
 
         totpRateLimiter.checkVerifyTotpRateLimit(user.getId());
 
-        boolean validCode = totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())
+        boolean validCode = (totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())
+                && totpReplayGuard.claimCode(user.getId(), requestDTO.getCode()))
                 || consumeBackupCodeIfMatches(user, requestDTO.getCode());
 
         if (!validCode) {
@@ -207,8 +212,10 @@ public class AuthService {
             throw new TotpAlreadyEnabledException();
         }
 
-        if (!totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())) {
-            log.warn("TOTP confirm rejected, invalid code, userId={}, platformId={}", user.getId(), platformId);
+        if (!totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())
+                || !totpReplayGuard.claimCode(user.getId(), requestDTO.getCode())) {
+            log.warn("TOTP confirm rejected, invalid or reused code, userId={}, platformId={}",
+                    user.getId(), platformId);
             throw new InvalidTotpException();
         }
 

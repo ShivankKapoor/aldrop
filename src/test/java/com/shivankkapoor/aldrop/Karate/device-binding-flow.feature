@@ -140,10 +140,28 @@ Scenario: verify-totp requires device info and the resulting session enforces it
     * def System = Java.type('java.lang.System')
     * def DefaultCodeGenerator = Java.type('dev.samstevens.totp.code.DefaultCodeGenerator')
     * def codeGenerator = new DefaultCodeGenerator()
+    * def issuedCounters = {}
+    # A TOTP code is only unique per 30 second time step, and the server rejects a code it has
+    # already accepted (RFC 6238 section 5.2). Asking for a second code inside the same step would
+    # hand back the same digits and be refused as a replay, so step forward instead: the server
+    # allows a discrepancy of one step, so a code for the next step is already valid. Where a
+    # scenario does not care which second factor it uses, prefer a backup code over calling this
+    # twice. Near a step boundary, wait out the remainder first, otherwise the next step would have
+    # become the current one by the time the server checks and the code would be two steps ahead.
     * def totpCode =
         """
         function(secret){
             var counter = Math.floor(System.currentTimeMillis() / 1000 / 30);
+            if (issuedCounters[secret] === counter) {
+                var millisLeftInStep = ((counter + 1) * 30000) - System.currentTimeMillis();
+                if (millisLeftInStep < 2000) {
+                    java.lang.Thread.sleep(millisLeftInStep + 250);
+                    counter = Math.floor(System.currentTimeMillis() / 1000 / 30);
+                } else {
+                    counter = counter + 1;
+                }
+            }
+            issuedCounters[secret] = counter;
             return codeGenerator.generate(secret, counter);
         }
         """
@@ -182,6 +200,11 @@ Scenario: verify-totp requires device info and the resulting session enforces it
     And request { token: '#(enableToken)', code: '#(totpCode(secret))' }
     When method post
     Then status 200
+    # this scenario is about device binding, not about which second factor is used, so the two
+    # verify-totp calls below use backup codes rather than more codes from confirm's time step.
+    # two different ones, so neither call depends on the other's rollback behaviour.
+    * def backupCodeOne = response.backupCodes[0]
+    * def backupCodeTwo = response.backupCodes[1]
 
     Given path 'auth/login'
     And header Authorization = totpPlatformAuth
@@ -193,7 +216,7 @@ Scenario: verify-totp requires device info and the resulting session enforces it
     # verify-totp is the call that actually creates the session, so it needs device info too
     Given path 'auth/login/verify-totp'
     And header Authorization = totpPlatformAuth
-    And request { totpToken: '#(totpToken)', code: '#(totpCode(secret))' }
+    And request { totpToken: '#(totpToken)', code: '#(backupCodeOne)' }
     When method post
     Then status 400
 
@@ -206,7 +229,7 @@ Scenario: verify-totp requires device info and the resulting session enforces it
 
     Given path 'auth/login/verify-totp'
     And header Authorization = totpPlatformAuth
-    And request { totpToken: '#(totpTokenTwo)', code: '#(totpCode(secret))', ipAddress: '#(ipAddress)', userAgent: '#(userAgent)' }
+    And request { totpToken: '#(totpTokenTwo)', code: '#(backupCodeTwo)', ipAddress: '#(ipAddress)', userAgent: '#(userAgent)' }
     When method post
     Then status 200
     * def sessionToken = response.token

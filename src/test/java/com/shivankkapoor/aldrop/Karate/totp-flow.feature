@@ -10,17 +10,36 @@ Background:
     * def System = Java.type('java.lang.System')
     * def DefaultCodeGenerator = Java.type('dev.samstevens.totp.code.DefaultCodeGenerator')
     * def codeGenerator = new DefaultCodeGenerator()
+    * def issuedCounters = {}
+    # A TOTP code is only unique per 30 second time step, and the server rejects a code it has
+    # already accepted (RFC 6238 section 5.2). Asking for a second code inside the same step would
+    # hand back the same digits and be refused as a replay, so step forward instead: the server
+    # allows a discrepancy of one step, so a code for the next step is already valid. Where a
+    # scenario does not care which second factor it uses, prefer a backup code over calling this
+    # twice. Near a step boundary, wait out the remainder first, otherwise the next step would have
+    # become the current one by the time the server checks and the code would be two steps ahead.
     * def totpCode =
         """
         function(secret){
             var counter = Math.floor(System.currentTimeMillis() / 1000 / 30);
+            if (issuedCounters[secret] === counter) {
+                var millisLeftInStep = ((counter + 1) * 30000) - System.currentTimeMillis();
+                if (millisLeftInStep < 2000) {
+                    java.lang.Thread.sleep(millisLeftInStep + 250);
+                    counter = Math.floor(System.currentTimeMillis() / 1000 / 30);
+                } else {
+                    counter = counter + 1;
+                }
+            }
+            issuedCounters[secret] = counter;
             return codeGenerator.generate(secret, counter);
         }
         """
     * def wrongCode =
         """
         function(secret){
-            var correct = parseInt(totpCode(secret), 10);
+            var counter = Math.floor(System.currentTimeMillis() / 1000 / 30);
+            var correct = parseInt(codeGenerator.generate(secret, counter), 10);
             var wrong = (correct + 1) % 1000000;
             var padded = '' + wrong;
             while (padded.length < 6) { padded = '0' + padded; }
@@ -43,6 +62,61 @@ Background:
             karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: platformId });
         }
         """
+
+Scenario: a totp code cannot be used twice
+    * def username = 'nina-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def firstToken = response.token
+
+    Given path 'auth/totp/enable'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)' }
+    When method post
+    Then status 200
+    * def secret = response.secret
+
+    # hold on to the exact code confirm consumes, so it can be replayed verbatim below
+    * def reusedCode = totpCode(secret)
+
+    Given path 'auth/totp/confirm'
+    And header Authorization = platformAuth
+    And request { token: '#(firstToken)', code: '#(reusedCode)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def totpToken = response.totpToken
+
+    # the same code is still inside its validity window, but has already been accepted once
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken)', code: '#(reusedCode)' }
+    When method post
+    Then status 401
+
+    # a replay is a failed attempt, not a consumed challenge, so a fresh code still completes login
+    Given path 'auth/login/verify-totp'
+    And header Authorization = platformAuth
+    And request { totpToken: '#(totpToken)', code: '#(totpCode(secret))' }
+    When method post
+    Then status 200
+    And match response.token == '#present'
 
 Scenario: enable, confirm and login challenge issues a session after verify-totp
     * def username = 'erin-' + randomSuffix
@@ -176,6 +250,7 @@ Scenario: login verify-totp rejects a wrong code without consuming the challenge
     And request { token: '#(firstToken)', code: '#(totpCode(secret))' }
     When method post
     Then status 200
+    * def backupCode = response.backupCodes[0]
 
     Given path 'auth/login'
     And header Authorization = platformAuth
@@ -190,10 +265,12 @@ Scenario: login verify-totp rejects a wrong code without consuming the challenge
     When method post
     Then status 401
 
-    # a wrong attempt does not consume the challenge, the correct code still works after
+    # a wrong attempt does not consume the challenge, a valid second factor still works after.
+    # this scenario is about the challenge surviving, not about which factor completes it, so a
+    # backup code is used rather than a second code from the step confirm already consumed.
     Given path 'auth/login/verify-totp'
     And header Authorization = platformAuth
-    And request { totpToken: '#(totpToken)', code: '#(totpCode(secret))' }
+    And request { totpToken: '#(totpToken)', code: '#(backupCode)' }
     When method post
     Then status 200
     And match response.token == '#present'
@@ -428,6 +505,8 @@ Scenario: starting a new login invalidates the previous unconsumed totp challeng
     And request { token: '#(firstToken)', code: '#(totpCode(secret))' }
     When method post
     Then status 200
+    * def backupCodeOne = response.backupCodes[0]
+    * def backupCodeTwo = response.backupCodes[1]
 
     Given path 'auth/login'
     And header Authorization = platformAuth
@@ -444,15 +523,18 @@ Scenario: starting a new login invalidates the previous unconsumed totp challeng
     Then status 200
     * def totpTokenTwo = response.totpToken
 
+    # backup codes rather than totp codes: this scenario is about which challenge is still live,
+    # and a replayed totp code would return 401 on the first call for the wrong reason, hiding
+    # the invalidation it exists to prove. backup codes are single use, so two are needed.
     Given path 'auth/login/verify-totp'
     And header Authorization = platformAuth
-    And request { totpToken: '#(totpTokenOne)', code: '#(totpCode(secret))' }
+    And request { totpToken: '#(totpTokenOne)', code: '#(backupCodeOne)' }
     When method post
     Then status 401
 
     Given path 'auth/login/verify-totp'
     And header Authorization = platformAuth
-    And request { totpToken: '#(totpTokenTwo)', code: '#(totpCode(secret))' }
+    And request { totpToken: '#(totpTokenTwo)', code: '#(backupCodeTwo)' }
     When method post
     Then status 200
 

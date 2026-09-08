@@ -54,6 +54,7 @@ import com.shivankkapoor.aldrop.Security.TokenGenerator;
 import com.shivankkapoor.aldrop.Security.TokenHasher;
 import com.shivankkapoor.aldrop.Security.TotpManager;
 import com.shivankkapoor.aldrop.Security.TotpRateLimiter;
+import com.shivankkapoor.aldrop.Security.TotpReplayGuard;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -84,6 +85,9 @@ class AuthServiceTest {
 
     @Mock
     private TotpRateLimiter totpRateLimiter;
+
+    @Mock
+    private TotpReplayGuard totpReplayGuard;
 
     @InjectMocks
     private AuthService authService;
@@ -892,6 +896,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(any(), any())).thenReturn(true);
         when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(1);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
         when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
@@ -907,6 +912,31 @@ class AuthServiceTest {
     }
 
     @Test
+    void verifyTotpRejectsAReplayedCodeAndCountsItAsAFailedAttempt() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+
+        TotpSession totpSession = activeTotpSession();
+        User user = activeUserWithTotpEnabled("SEED123");
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(userId, "123456")).thenReturn(false);
+        when(userRepository.consumeBackupCodeIfPresent(userId, "123456")).thenReturn(0);
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(InvalidTotpException.class);
+
+        assertThat(totpSession.getAttemptCount()).isEqualTo(1);
+        verify(sessionRepository, never()).save(any());
+        verify(totpSessionRepository, never()).markConsumedIfUnconsumed(any(), any());
+        verify(totpRateLimiter, never()).resetVerifyTotpRateLimit(any());
+    }
+
+    @Test
     void verifyTotpThrowsWhenConsumptionRaceIsLost() {
         VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
         request.setTotpToken("totp-token");
@@ -918,6 +948,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(any(), any())).thenReturn(true);
         when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(0);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithTotpAvailable(true)));
 
@@ -1109,6 +1140,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(any(), any())).thenReturn(true);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
 
         assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
@@ -1134,6 +1166,7 @@ class AuthServiceTest {
         when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
         when(userRepository.findById(userId)).thenReturn(Optional.of(activeUserWithTotpEnabled("SEED123")));
         when(totpManager.verifyCode("SEED123", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(any(), any())).thenReturn(true);
         when(totpSessionRepository.markConsumedIfUnconsumed(eq(totpSession.getId()), any())).thenReturn(1);
         when(platformRepository.findById(platformId)).thenReturn(Optional.of(platformWithDeviceBinding(true)));
         when(tokenGenerator.generate(anyInt())).thenReturn("session-token");
@@ -1298,6 +1331,7 @@ class AuthServiceTest {
         when(sessionRepository.findByTokenHash("hashed-session-token")).thenReturn(Optional.of(session));
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(totpManager.verifyCode("PENDINGSECRET", "123456")).thenReturn(true);
+        when(totpReplayGuard.claimCode(any(), any())).thenReturn(true);
         when(tokenGenerator.generate(anyInt())).thenReturn("backup-code");
 
         ConfirmTotpResponseDTO response = authService.confirmTotp(platformId, request);
