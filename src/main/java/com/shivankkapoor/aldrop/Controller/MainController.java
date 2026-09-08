@@ -1,5 +1,7 @@
 package com.shivankkapoor.aldrop.Controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -12,11 +14,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
+@Tag(name = "Service", description = "Unauthenticated liveness endpoints.")
 public class MainController {
 
     private final Instant startTime = Instant.now();
     private static final Logger log = LoggerFactory.getLogger(MainController.class);
 
+    @Operation(summary = "Landing page", description = "A static page confirming the service is reachable.")
     @GetMapping("/")
     public ResponseEntity<String> home(){
         log.info("Home endpoint has been called");
@@ -24,6 +28,8 @@ public class MainController {
         return ResponseEntity.ok(homeString);
     }
 
+    @Operation(summary = "Liveness and uptime",
+            description = "Reports that the service is up and how long it has been running.")
     @GetMapping("/monitor")
     public ResponseEntity<Map<String, String>> monitor(){
         log.info("Monitor endpoint has been called");
