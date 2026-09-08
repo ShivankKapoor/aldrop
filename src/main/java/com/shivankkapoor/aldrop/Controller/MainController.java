@@ -35,7 +35,7 @@ public class MainController {
         long seconds = uptime.toSecondsPart();
         String uptimeStr = (days > 0 ? days + "d " : "") + hours + "h " + minutes + "m " + seconds + "s";
 
-        resp.put("name", "Standbase-Backend");
+        resp.put("name", "Aldrop");
         resp.put("status", "Up");
         resp.put("uptime", uptimeStr);
         resp.put("platform", "Java");
