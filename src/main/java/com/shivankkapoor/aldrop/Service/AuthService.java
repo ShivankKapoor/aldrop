@@ -1,6 +1,5 @@
 package com.shivankkapoor.aldrop.Service;
 
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -8,10 +7,12 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.shivankkapoor.aldrop.Data.Platform;
-import com.shivankkapoor.aldrop.Data.Session;
-import com.shivankkapoor.aldrop.Data.TotpSession;
-import com.shivankkapoor.aldrop.Data.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
@@ -23,6 +24,10 @@ import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.EnableTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
+import com.shivankkapoor.aldrop.Data.Platform;
+import com.shivankkapoor.aldrop.Data.Session;
+import com.shivankkapoor.aldrop.Data.TotpSession;
+import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.Exception.DeviceBindingRequiredException;
 import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
 import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
@@ -40,19 +45,12 @@ import com.shivankkapoor.aldrop.Security.TokenHasher;
 import com.shivankkapoor.aldrop.Security.TotpManager;
 import com.shivankkapoor.aldrop.Security.TotpRateLimiter;
 import com.shivankkapoor.aldrop.Security.TotpReplayGuard;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
-    private static final int SESSION_TOKEN_BYTES = 32;
-    private static final Duration TOTP_SESSION_TTL = Duration.ofMinutes(5);
     private static final int MAX_TOTP_ATTEMPTS = 5;
     private static final int BACKUP_CODE_COUNT = 8;
     private static final int BACKUP_CODE_BYTES = 6;
@@ -87,7 +85,9 @@ public class AuthService {
     @Autowired
     private TotpReplayGuard totpReplayGuard;
 
-    @Transactional
+    @Autowired
+    private SessionService sessionService;
+
     public LoginResponseDTO login(UUID platformId, LoginRequestDTO requestDTO) {
         String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
         String loginRateLimitKey = platformId + ":" + username;
@@ -110,12 +110,12 @@ public class AuthService {
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
 
         if (platform.isTotpAvailable() && user.isTotpEnabled()) {
-            LoginResponseDTO challenge = issueTotpChallenge(user, platformId);
+            LoginResponseDTO challenge = sessionService.issueTotpChallenge(user, platformId);
             log.info("Login requires TOTP, userId={}, platformId={}", user.getId(), platformId);
             return challenge;
         }
 
-        LoginResponseDTO response = createSessionResponse(user, platform, platformId,
+        LoginResponseDTO response = sessionService.createSessionResponse(user, platform, platformId,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("Login succeeded, userId={}, platformId={}", user.getId(), platformId);
         return response;
@@ -171,7 +171,7 @@ public class AuthService {
         }
         totpRateLimiter.resetVerifyTotpRateLimit(user.getId());
 
-        LoginResponseDTO response = createSessionResponse(user, platform, platformId,
+        LoginResponseDTO response = sessionService.createSessionResponse(user, platform, platformId,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("TOTP verification succeeded, totpSessionId={}, userId={}, platformId={}",
                 totpSession.getId(), user.getId(), platformId);
@@ -273,69 +273,6 @@ public class AuthService {
                         },
                         () -> log.info("Logout-all no-op, no matching session for platformId={}", platformId)
                 );
-    }
-
-    private LoginResponseDTO createSessionResponse(User user, Platform platform, UUID platformId,
-            String ipAddress, String userAgent) {
-        if (platform.isRequireDeviceBinding() && (isBlank(ipAddress) || isBlank(userAgent))) {
-            throw new DeviceBindingRequiredException();
-        }
-
-        OffsetDateTime now = OffsetDateTime.now();
-        Integer maxSessionsPerUser = platform.getMaxSessionsPerUser();
-        if (maxSessionsPerUser != null) {
-            List<Session> activeSessions = sessionRepository
-                    .findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(user.getId(), platformId, now);
-            int numToEvict = activeSessions.size() - maxSessionsPerUser + 1;
-            if (numToEvict > 0) {
-                List<Session> toEvict = activeSessions.subList(0, numToEvict);
-                sessionRepository.deleteAll(toEvict);
-                log.info("Evicted {} oldest session(s) for userId={}, platformId={} to respect maxSessionsPerUser={}",
-                        toEvict.size(), user.getId(), platformId, maxSessionsPerUser);
-            }
-        }
-
-        String rawToken = tokenGenerator.generate(SESSION_TOKEN_BYTES);
-
-        Session session = new Session();
-        session.setId(UUID.randomUUID());
-        session.setTokenHash(tokenHasher.hash(rawToken));
-        session.setUserId(user.getId());
-        session.setPlatformId(platformId);
-        session.setCreatedAt(now);
-        session.setExpiresAt(now.plus(platform.getSessionTtl()));
-        session.setIpAddress(ipAddress);
-        session.setUserAgent(userAgent);
-
-        Session saved = sessionRepository.save(session);
-        log.info("Session created, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
-
-        return new LoginResponseDTO(rawToken, null, saved.getExpiresAt());
-    }
-
-    private LoginResponseDTO issueTotpChallenge(User user, UUID platformId) {
-        int invalidated = totpSessionRepository.deleteUnconsumedByUserIdAndPlatformId(user.getId(), platformId);
-        if (invalidated > 0) {
-            log.info("Invalidated {} outstanding TOTP challenge(s), userId={}, platformId={}",
-                    invalidated, user.getId(), platformId);
-        }
-
-        String rawToken = tokenGenerator.generate(SESSION_TOKEN_BYTES);
-        OffsetDateTime now = OffsetDateTime.now();
-
-        TotpSession totpSession = new TotpSession();
-        totpSession.setId(UUID.randomUUID());
-        totpSession.setTokenHash(tokenHasher.hash(rawToken));
-        totpSession.setUserId(user.getId());
-        totpSession.setPlatformId(platformId);
-        totpSession.setExpiresAt(now.plus(TOTP_SESSION_TTL));
-        totpSession.setAttemptCount(0);
-
-        TotpSession saved = totpSessionRepository.save(totpSession);
-        log.info("TOTP challenge issued, totpSessionId={}, userId={}, platformId={}",
-                saved.getId(), user.getId(), platformId);
-
-        return new LoginResponseDTO(null, rawToken, saved.getExpiresAt());
     }
 
     private Session resolveActiveSession(UUID platformId, String token, String action) {

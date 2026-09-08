@@ -16,12 +16,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
@@ -89,8 +91,20 @@ class AuthServiceTest {
     @Mock
     private TotpReplayGuard totpReplayGuard;
 
+    // a real SessionService, wired to the same mocked repositories. the session and challenge
+    // writes moved there, so running it for real keeps the repository assertions in this suite
+    // meaningful instead of asserting against a mock. mockito will not inject one @InjectMocks
+    // field into another, so it is handed to AuthService explicitly in setUp below.
+    @InjectMocks
+    private SessionService sessionService;
+
     @InjectMocks
     private AuthService authService;
+
+    @BeforeEach
+    void injectSessionService() {
+        ReflectionTestUtils.setField(authService, "sessionService", sessionService);
+    }
 
     private final UUID platformId = UUID.randomUUID();
     private final UUID userId = UUID.randomUUID();
