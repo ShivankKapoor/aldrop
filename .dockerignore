@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+.idea/
+.claude/
+*.iml
+
+# not needed to build or run the service
+run-karate-tests.sh
+schema.sql
