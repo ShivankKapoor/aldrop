@@ -71,3 +71,20 @@ CREATE INDEX idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX idx_sessions_platform_id ON sessions(platform_id);
 CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
+
+-- ============================================
+-- AUTH EVENTS
+-- ============================================
+CREATE TABLE auth_events (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    platform_id         UUID NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+    user_id             UUID REFERENCES users(id) ON DELETE SET NULL,
+    attempted_username  TEXT,
+    event_type          TEXT NOT NULL,
+    ip_address          INET,
+    user_agent          TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_auth_events_platform_id ON auth_events(platform_id);
+CREATE INDEX idx_auth_events_user_id ON auth_events(user_id);
