@@ -73,7 +73,7 @@ sessions per user, and two flags: `totpAvailable` and `requireDeviceBinding`.
 | POST | `/auth/register` | Create a user on the calling platform. Usernames are lowercased and unique per platform. |
 | POST | `/auth/login` | Username and password. Returns either a session token or a TOTP challenge — see below. |
 | POST | `/auth/login/verify-totp` | Complete a two-factor login with an authenticator or backup code. |
-| POST | `/auth/validate` | Check a session token; returns the user id and expiry. |
+| POST | `/auth/validate` | Check a session token; returns the user id, username and expiry. |
 | POST | `/auth/logout` | End one session. |
 | POST | `/auth/logout-all` | End every session for the token's user on this platform. |
 | POST | `/auth/totp/enable` | Start two-factor enrolment for a logged-in user; returns a secret and `otpauth://` URI. |
@@ -113,7 +113,7 @@ Enrolment requires both the platform flag `totpAvailable` and the user not alrea
 ## Sessions
 
 `POST /auth/validate` is the endpoint a platform calls on each authenticated request. It returns
-the user id and the session's expiry, and fails for an unknown, expired or revoked token, a token
+the user id, the username and the session's expiry, and fails for an unknown, expired or revoked token, a token
 belonging to another platform, a deactivated user, or a device-binding mismatch — all reported the
 same way, as 401.
 
