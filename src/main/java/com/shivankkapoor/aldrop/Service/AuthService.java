@@ -242,7 +242,7 @@ public class AuthService {
         Session saved = sessionRepository.save(session);
         log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
 
-        return new ValidateSessionResponseDTO(saved.getUserId(), saved.getExpiresAt());
+        return new ValidateSessionResponseDTO(saved.getUserId(), user.getUsername(), saved.getExpiresAt());
     }
 
     @Transactional

@@ -110,11 +110,11 @@ public class UserController {
 
     @Operation(summary = "Check whether a session token is still valid",
             description = "Call this on each request that needs authentication. It returns the "
-                    + "user id and the session's expiry. Because sessions are server-side rows "
+                    + "user id, username, and the session's expiry. Because sessions are server-side rows "
                     + "rather than JWTs, a logged-out or revoked session fails here immediately "
                     + "rather than staying valid until it expires.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "The session is valid; the response carries the user id and expiry."),
+            @ApiResponse(responseCode = "200", description = "The session is valid; the response carries the user id, username, and expiry."),
             @ApiResponse(responseCode = "400", description = "Device binding is required and ipAddress/userAgent were missing.", content = @Content),
             @ApiResponse(responseCode = "401", description = "Unknown, expired, or revoked token; a token belonging to another platform; a deactivated user; or a device-binding mismatch. All report the same way.", content = @Content)
     })

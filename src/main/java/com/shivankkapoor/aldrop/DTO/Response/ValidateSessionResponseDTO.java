@@ -12,5 +12,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ValidateSessionResponseDTO {
     private UUID userId;
+
+    /**
+     * The session owner's username. Platforms that keep their own user row use this to provision
+     * one on a user's first login, rather than needing a separate lookup.
+     */
+    private String username;
+
     private OffsetDateTime expiresAt;
 }

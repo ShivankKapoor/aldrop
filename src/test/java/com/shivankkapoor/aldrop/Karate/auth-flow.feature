@@ -49,6 +49,7 @@ Scenario: register, login, validate and logout
     When method post
     Then status 200
     And match response.userId == '#present'
+    And match response.username == username
 
     Given path 'auth/logout'
     And header Authorization = platformAuth
