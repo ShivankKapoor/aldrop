@@ -424,6 +424,7 @@ class AuthServiceTest {
         ValidateSessionResponseDTO response = authService.validate(platformId, request);
 
         assertThat(response.getUserId()).isEqualTo(userId);
+        assertThat(response.getUsername()).isEqualTo("alice");
         assertThat(response.getExpiresAt()).isEqualTo(session.getExpiresAt());
         verify(sessionRepository).save(session);
     }
