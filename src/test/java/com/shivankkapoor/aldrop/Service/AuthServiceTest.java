@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.shivankkapoor.aldrop.Data.AuthEventType;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.TotpSession;
@@ -90,6 +92,9 @@ class AuthServiceTest {
 
     @Mock
     private TotpReplayGuard totpReplayGuard;
+
+    @Mock
+    private AuthEventService authEventService;
 
     // a real SessionService, wired to the same mocked repositories. the session and challenge
     // writes moved there, so running it for real keeps the repository assertions in this suite
@@ -158,6 +163,17 @@ class AuthServiceTest {
         return totpSession;
     }
 
+    private void verifyAuthEventRecorded(AuthEventType eventType, UUID expectedUserId, String expectedUsername) {
+        verify(authEventService).record(eq(platformId),
+                expectedUserId == null ? isNull() : eq(expectedUserId),
+                expectedUsername == null ? isNull() : eq(expectedUsername),
+                eq(eventType), any(), any());
+    }
+
+    private void verifyNoAuthEventRecorded() {
+        verify(authEventService, never()).record(any(), any(), any(), any(), any(), any());
+    }
+
     // ---- login ----
 
     @Test
@@ -185,6 +201,7 @@ class AuthServiceTest {
         assertThat(saved.getTokenHash()).isEqualTo("hashed-generated-token");
         assertThat(saved.getExpiresAt()).isEqualTo(saved.getCreatedAt().plus(Duration.ofHours(2)));
         assertThat(response.getExpiresAt()).isEqualTo(saved.getExpiresAt());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_SUCCESS, userId, null);
     }
 
     @Test
@@ -217,6 +234,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidCredentialsException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_FAILED_UNKNOWN_USER, null, "ghost");
     }
 
     @Test
@@ -235,6 +253,7 @@ class AuthServiceTest {
 
         verify(passwordHasher).matches("correcthorse", "hashed-password");
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_FAILED_INACTIVE, userId, null);
     }
 
     @Test
@@ -263,6 +282,7 @@ class AuthServiceTest {
                 .isInstanceOf(TooManyAttemptsException.class);
 
         verify(userRepository, never()).findByPlatformIdAndUsername(any(), any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_RATE_LIMITED, null, "alice");
     }
 
     @Test
@@ -296,6 +316,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidCredentialsException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_FAILED_BAD_PASSWORD, userId, null);
     }
 
     @Test
@@ -445,6 +466,7 @@ class AuthServiceTest {
                 .isInstanceOf(DeviceBindingRequiredException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
     @Test
@@ -493,6 +515,7 @@ class AuthServiceTest {
                 .isInstanceOf(DeviceBindingRequiredException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
     @Test
@@ -520,6 +543,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidSessionException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
     @Test
@@ -627,6 +651,8 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.validate(platformId, request))
                 .isInstanceOf(InvalidSessionException.class);
+
+        verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, null, null);
     }
 
     @Test
@@ -649,6 +675,7 @@ class AuthServiceTest {
 
         verify(userRepository, never()).findById(any());
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, null, null);
     }
 
     @Test
@@ -671,6 +698,7 @@ class AuthServiceTest {
 
         verify(userRepository, never()).findById(any());
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, null, null);
     }
 
     @Test
@@ -696,6 +724,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidSessionException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, userId, null);
     }
 
     @Test
@@ -718,6 +747,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidSessionException.class);
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, userId, null);
     }
 
     // ---- logout ----
@@ -738,6 +768,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository).delete(session);
+        verifyAuthEventRecorded(AuthEventType.LOGOUT, userId, null);
     }
 
     @Test
@@ -751,6 +782,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository, never()).delete(any());
+        verifyNoAuthEventRecorded();
     }
 
     @Test
@@ -769,6 +801,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository, never()).delete(any());
+        verifyNoAuthEventRecorded();
     }
 
     // ---- logoutAll ----
@@ -793,6 +826,7 @@ class AuthServiceTest {
         authService.logoutAll(platformId, request);
 
         verify(sessionRepository).deleteAll(List.of(session, other));
+        verifyAuthEventRecorded(AuthEventType.LOGOUT_ALL, userId, null);
     }
 
     @Test
@@ -807,6 +841,7 @@ class AuthServiceTest {
 
         verify(sessionRepository, never()).findByUserIdAndPlatformId(any(), any());
         verify(sessionRepository, never()).deleteAll(any());
+        verifyNoAuthEventRecorded();
     }
 
     @Test
@@ -826,6 +861,7 @@ class AuthServiceTest {
 
         verify(sessionRepository, never()).findByUserIdAndPlatformId(any(), any());
         verify(sessionRepository, never()).deleteAll(any());
+        verifyNoAuthEventRecorded();
     }
 
     // ---- login with TOTP ----
@@ -856,6 +892,7 @@ class AuthServiceTest {
         assertThat(captor.getValue().getTokenHash()).isEqualTo("hashed-totp-challenge-token");
 
         verify(sessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_CHALLENGE_ISSUED, userId, null);
     }
 
     @Test
@@ -895,6 +932,7 @@ class AuthServiceTest {
         assertThat(response.getToken()).isEqualTo("generated-token");
         assertThat(response.getTotpToken()).isNull();
         verify(totpSessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_SUCCESS, userId, null);
     }
 
     // ---- verifyTotp ----
@@ -924,6 +962,7 @@ class AuthServiceTest {
         verify(totpSessionRepository).markConsumedIfUnconsumed(eq(totpSession.getId()), any());
         verify(totpRateLimiter).checkVerifyTotpRateLimit(userId);
         verify(totpRateLimiter).resetVerifyTotpRateLimit(userId);
+        verifyAuthEventRecorded(AuthEventType.LOGIN_SUCCESS_TOTP, userId, null);
     }
 
     @Test
@@ -949,6 +988,7 @@ class AuthServiceTest {
         verify(sessionRepository, never()).save(any());
         verify(totpSessionRepository, never()).markConsumedIfUnconsumed(any(), any());
         verify(totpRateLimiter, never()).resetVerifyTotpRateLimit(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_FAILED_CODE, userId, null);
     }
 
     @Test
@@ -972,6 +1012,7 @@ class AuthServiceTest {
 
         verify(sessionRepository, never()).save(any());
         verify(totpRateLimiter, never()).resetVerifyTotpRateLimit(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, userId, null);
     }
 
     @Test
@@ -992,6 +1033,7 @@ class AuthServiceTest {
 
         verify(totpManager, never()).verifyCode(any(), any());
         verify(totpSessionRepository, never()).save(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_RATE_LIMITED, userId, null);
     }
 
     @Test
@@ -1073,6 +1115,8 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
                 .isInstanceOf(InvalidTotpException.class);
+
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, null, null);
     }
 
     @Test
@@ -1091,6 +1135,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidTotpException.class);
 
         verify(userRepository, never()).findById(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, null, null);
     }
 
     @Test
@@ -1107,6 +1152,8 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
                 .isInstanceOf(InvalidTotpException.class);
+
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, userId, null);
     }
 
     @Test
@@ -1123,6 +1170,8 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
                 .isInstanceOf(InvalidTotpException.class);
+
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, userId, null);
     }
 
     @Test
@@ -1141,6 +1190,7 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidTotpException.class);
 
         verify(userRepository, never()).findById(any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, userId, null);
     }
 
     @Test
@@ -1165,6 +1215,7 @@ class AuthServiceTest {
         assertThat(totpSession.getConsumedAt()).isNull();
         verify(totpSessionRepository, never()).save(any());
         verify(totpSessionRepository, never()).markConsumedIfUnconsumed(any(), any());
+        verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
     @Test
@@ -1214,6 +1265,26 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidTotpException.class);
 
         verify(totpManager, never()).verifyCode(any(), any());
+        verifyAuthEventRecorded(AuthEventType.LOGIN_FAILED_INACTIVE, userId, null);
+    }
+
+    @Test
+    void verifyTotpRecordsSessionInvalidWhenUserNoLongerExists() {
+        VerifyTotpRequestDTO request = new VerifyTotpRequestDTO();
+        request.setTotpToken("totp-token");
+        request.setCode("123456");
+
+        TotpSession totpSession = activeTotpSession();
+
+        when(tokenHasher.hash("totp-token")).thenReturn("hashed-totp-token");
+        when(totpSessionRepository.findByTokenHash("hashed-totp-token")).thenReturn(Optional.of(totpSession));
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.verifyTotp(platformId, request))
+                .isInstanceOf(InvalidTotpException.class);
+
+        verify(totpManager, never()).verifyCode(any(), any());
+        verifyAuthEventRecorded(AuthEventType.TOTP_SESSION_INVALID, userId, null);
     }
 
     // ---- enableTotp ----
