@@ -28,7 +28,7 @@ public class AuthEvent {
     @Column(name = "id", nullable = false, unique = true)
     private UUID id;
 
-    @Column(name = "platform_id", nullable = false, unique = false)
+    @Column(name = "platform_id", nullable = true, unique = false)
     private UUID platformId;
 
     @Column(name = "user_id", nullable = true, unique = false)
