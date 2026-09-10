@@ -329,7 +329,7 @@ public class AuthService {
                             log.info("Logout succeeded, sessionId={}, userId={}, platformId={}",
                                     session.getId(), session.getUserId(), platformId);
                             authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT,
-                                    session.getIpAddress(), session.getUserAgent());
+                                    requestDTO.getIpAddress(), session.getUserAgent());
                         },
                         () -> log.info("Logout no-op, no matching session for platformId={}", platformId)
                 );
@@ -347,7 +347,7 @@ public class AuthService {
                             log.info("Logout-all succeeded, userId={}, platformId={}, sessionsRevoked={}",
                                     session.getUserId(), platformId, sessions.size());
                             authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT_ALL,
-                                    session.getIpAddress(), session.getUserAgent());
+                                    requestDTO.getIpAddress(), session.getUserAgent());
                         },
                         () -> log.info("Logout-all no-op, no matching session for platformId={}", platformId)
                 );
