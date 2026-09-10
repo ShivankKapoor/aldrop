@@ -24,6 +24,7 @@ import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.EnableTotpResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ValidateSessionResponseDTO;
+import com.shivankkapoor.aldrop.Data.AuthEventType;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.TotpSession;
@@ -33,6 +34,7 @@ import com.shivankkapoor.aldrop.Exception.InvalidCredentialsException;
 import com.shivankkapoor.aldrop.Exception.InvalidSessionException;
 import com.shivankkapoor.aldrop.Exception.InvalidTotpException;
 import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
+import com.shivankkapoor.aldrop.Exception.TooManyAttemptsException;
 import com.shivankkapoor.aldrop.Exception.TotpAlreadyEnabledException;
 import com.shivankkapoor.aldrop.Exception.TotpNotAvailableException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
@@ -88,18 +90,39 @@ public class AuthService {
     @Autowired
     private SessionService sessionService;
 
+    @Autowired
+    private AuthEventService authEventService;
+
     public LoginResponseDTO login(UUID platformId, LoginRequestDTO requestDTO) {
         String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
         String loginRateLimitKey = platformId + ":" + username;
-        totpRateLimiter.checkLoginRateLimit(loginRateLimitKey);
+        try {
+            totpRateLimiter.checkLoginRateLimit(loginRateLimitKey);
+        } catch (TooManyAttemptsException e) {
+            authEventService.record(platformId, null, username, AuthEventType.LOGIN_RATE_LIMITED,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            throw e;
+        }
 
         Optional<User> maybeUser = userRepository.findByPlatformIdAndUsername(platformId, username);
         boolean passwordMatches = passwordHasher.matches(
                 requestDTO.getPassword(),
                 maybeUser.map(User::getPasswordHash).orElse(null));
 
-        if (maybeUser.isEmpty() || !passwordMatches || !maybeUser.get().isActive()) {
+        AuthEventType failureType = null;
+        if (maybeUser.isEmpty()) {
+            failureType = AuthEventType.LOGIN_FAILED_UNKNOWN_USER;
+        } else if (!passwordMatches) {
+            failureType = AuthEventType.LOGIN_FAILED_BAD_PASSWORD;
+        } else if (!maybeUser.get().isActive()) {
+            failureType = AuthEventType.LOGIN_FAILED_INACTIVE;
+        }
+
+        if (failureType != null) {
             log.warn("Login rejected, platformId={}, username={}", platformId, username);
+            authEventService.record(platformId, maybeUser.map(User::getId).orElse(null),
+                    maybeUser.isEmpty() ? username : null, failureType,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new InvalidCredentialsException();
         }
 
@@ -112,12 +135,16 @@ public class AuthService {
         if (platform.isTotpAvailable() && user.isTotpEnabled()) {
             LoginResponseDTO challenge = sessionService.issueTotpChallenge(user, platformId);
             log.info("Login requires TOTP, userId={}, platformId={}", user.getId(), platformId);
+            authEventService.record(platformId, user.getId(), null, AuthEventType.TOTP_CHALLENGE_ISSUED,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             return challenge;
         }
 
         LoginResponseDTO response = sessionService.createSessionResponse(user, platform, platformId,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("Login succeeded, userId={}, platformId={}", user.getId(), platformId);
+        authEventService.record(platformId, user.getId(), null, AuthEventType.LOGIN_SUCCESS,
+                requestDTO.getIpAddress(), requestDTO.getUserAgent());
         return response;
     }
 
@@ -125,23 +152,41 @@ public class AuthService {
     public LoginResponseDTO verifyTotp(UUID platformId, VerifyTotpRequestDTO requestDTO) {
         TotpSession totpSession = totpSessionRepository.findByTokenHash(tokenHasher.hash(requestDTO.getTotpToken()))
                 .filter(ts -> ts.getPlatformId().equals(platformId))
-                .orElseThrow(InvalidTotpException::new);
+                .orElseThrow(() -> {
+                    authEventService.record(platformId, null, null, AuthEventType.TOTP_SESSION_INVALID,
+                            requestDTO.getIpAddress(), requestDTO.getUserAgent());
+                    return new InvalidTotpException();
+                });
 
         OffsetDateTime now = OffsetDateTime.now();
         if (totpSession.getConsumedAt() != null || totpSession.getExpiresAt().isBefore(now)
                 || totpSession.getAttemptCount() >= MAX_TOTP_ATTEMPTS) {
             log.warn("TOTP verification rejected, totpSessionId={}, platformId={}", totpSession.getId(), platformId);
+            authEventService.record(platformId, totpSession.getUserId(), null, AuthEventType.TOTP_SESSION_INVALID,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new InvalidTotpException();
         }
 
         User user = userRepository.findById(totpSession.getUserId())
-                .orElseThrow(InvalidTotpException::new);
+                .orElseThrow(() -> {
+                    authEventService.record(platformId, totpSession.getUserId(), null, AuthEventType.TOTP_SESSION_INVALID,
+                            requestDTO.getIpAddress(), requestDTO.getUserAgent());
+                    return new InvalidTotpException();
+                });
 
         if (!user.isActive()) {
+            authEventService.record(platformId, user.getId(), null, AuthEventType.LOGIN_FAILED_INACTIVE,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new InvalidTotpException();
         }
 
-        totpRateLimiter.checkVerifyTotpRateLimit(user.getId());
+        try {
+            totpRateLimiter.checkVerifyTotpRateLimit(user.getId());
+        } catch (TooManyAttemptsException e) {
+            authEventService.record(platformId, user.getId(), null, AuthEventType.TOTP_RATE_LIMITED,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            throw e;
+        }
 
         boolean validCode = (totpManager.verifyCode(user.getTotpSeed(), requestDTO.getCode())
                 && totpReplayGuard.claimCode(user.getId(), requestDTO.getCode()))
@@ -152,6 +197,8 @@ public class AuthService {
             totpSessionRepository.save(totpSession);
             log.warn("TOTP code invalid, totpSessionId={}, userId={}, platformId={}",
                     totpSession.getId(), user.getId(), platformId);
+            authEventService.record(platformId, user.getId(), null, AuthEventType.TOTP_FAILED_CODE,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new InvalidTotpException();
         }
 
@@ -160,6 +207,8 @@ public class AuthService {
 
         if (platform.isRequireDeviceBinding()
                 && (isBlank(requestDTO.getIpAddress()) || isBlank(requestDTO.getUserAgent()))) {
+            authEventService.record(platformId, user.getId(), null, AuthEventType.DEVICE_BINDING_REJECTED,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new DeviceBindingRequiredException();
         }
 
@@ -167,6 +216,8 @@ public class AuthService {
         if (consumed == 0) {
             log.warn("TOTP verification lost the consumption race, totpSessionId={}, userId={}, platformId={}",
                     totpSession.getId(), user.getId(), platformId);
+            authEventService.record(platformId, user.getId(), null, AuthEventType.TOTP_SESSION_INVALID,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw new InvalidTotpException();
         }
         totpRateLimiter.resetVerifyTotpRateLimit(user.getId());
@@ -175,6 +226,8 @@ public class AuthService {
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
         log.info("TOTP verification succeeded, totpSessionId={}, userId={}, platformId={}",
                 totpSession.getId(), user.getId(), platformId);
+        authEventService.record(platformId, user.getId(), null, AuthEventType.LOGIN_SUCCESS_TOTP,
+                requestDTO.getIpAddress(), requestDTO.getUserAgent());
         return response;
     }
 
@@ -230,13 +283,34 @@ public class AuthService {
 
     @Transactional
     public ValidateSessionResponseDTO validate(UUID platformId, ValidateSessionRequestDTO requestDTO) {
-        Session session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
-        User user = resolveActiveUser(session, "validate");
+        Session session;
+        try {
+            session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
+        } catch (InvalidSessionException e) {
+            authEventService.record(platformId, null, null, AuthEventType.SESSION_INVALID,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            throw e;
+        }
+
+        User user;
+        try {
+            user = resolveActiveUser(session, "validate");
+        } catch (InvalidSessionException e) {
+            authEventService.record(platformId, session.getUserId(), null, AuthEventType.SESSION_INVALID,
+                    requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            throw e;
+        }
 
         Platform platform = platformRepository.findById(platformId)
                 .orElseThrow(() -> new PlatformNotFoundException(platformId));
         if (platform.isRequireDeviceBinding()) {
-            enforceDeviceBinding(session, requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            try {
+                enforceDeviceBinding(session, requestDTO.getIpAddress(), requestDTO.getUserAgent());
+            } catch (DeviceBindingRequiredException | InvalidSessionException e) {
+                authEventService.record(platformId, session.getUserId(), null, AuthEventType.DEVICE_BINDING_REJECTED,
+                        requestDTO.getIpAddress(), requestDTO.getUserAgent());
+                throw e;
+            }
         }
 
         Session saved = sessionRepository.save(session);
@@ -254,6 +328,8 @@ public class AuthService {
                             sessionRepository.delete(session);
                             log.info("Logout succeeded, sessionId={}, userId={}, platformId={}",
                                     session.getId(), session.getUserId(), platformId);
+                            authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT,
+                                    session.getIpAddress(), session.getUserAgent());
                         },
                         () -> log.info("Logout no-op, no matching session for platformId={}", platformId)
                 );
@@ -270,6 +346,8 @@ public class AuthService {
                             sessionRepository.deleteAll(sessions);
                             log.info("Logout-all succeeded, userId={}, platformId={}, sessionsRevoked={}",
                                     session.getUserId(), platformId, sessions.size());
+                            authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT_ALL,
+                                    session.getIpAddress(), session.getUserAgent());
                         },
                         () -> log.info("Logout-all no-op, no matching session for platformId={}", platformId)
                 );

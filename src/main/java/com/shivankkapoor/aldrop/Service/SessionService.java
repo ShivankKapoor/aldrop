@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.shivankkapoor.aldrop.DTO.Response.LoginResponseDTO;
+import com.shivankkapoor.aldrop.Data.AuthEventType;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.TotpSession;
@@ -43,10 +44,15 @@ public class SessionService {
     @Autowired
     private TokenHasher tokenHasher;
 
+    @Autowired
+    private AuthEventService authEventService;
+
     @Transactional
     public LoginResponseDTO createSessionResponse(User user, Platform platform, UUID platformId,
             String ipAddress, String userAgent) {
         if (platform.isRequireDeviceBinding() && (isBlank(ipAddress) || isBlank(userAgent))) {
+            authEventService.record(platformId, user.getId(), null, AuthEventType.DEVICE_BINDING_REJECTED,
+                    ipAddress, userAgent);
             throw new DeviceBindingRequiredException();
         }
 
