@@ -76,7 +76,7 @@ CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 -- AUTH EVENTS
 -- ============================================
 CREATE TABLE auth_events (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     platform_id         UUID REFERENCES platforms(id) ON DELETE SET NULL,
     user_id             UUID REFERENCES users(id) ON DELETE SET NULL,
     attempted_username  TEXT,

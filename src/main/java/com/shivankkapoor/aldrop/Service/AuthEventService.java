@@ -49,7 +49,6 @@ public class AuthEventService {
         Location location = getLocation(ipAddress);
 
         AuthEvent event = new AuthEvent();
-        event.setId(UUID.randomUUID());
         event.setPlatformId(platformId);
         event.setUserId(userId);
         event.setAttemptedUsername(attemptedUsername);

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.UUID;
@@ -60,7 +59,6 @@ class AuthEventServiceTest {
         ArgumentCaptor<AuthEvent> captor = ArgumentCaptor.forClass(AuthEvent.class);
         verify(authEventRepository).save(captor.capture());
         AuthEvent saved = captor.getValue();
-        assertThat(saved.getId()).isNotNull();
         assertThat(saved.getPlatformId()).isEqualTo(platformId);
         assertThat(saved.getUserId()).isEqualTo(userId);
         assertThat(saved.getAttemptedUsername()).isEqualTo("alice");
@@ -101,15 +99,5 @@ class AuthEventServiceTest {
 
         assertThatCode(() -> authEventService.record(platformId, userId, null, AuthEventType.LOGOUT, null, null))
                 .doesNotThrowAnyException();
-    }
-
-    @Test
-    void recordGeneratesAUniqueIdPerEvent() {
-        authEventService.record(platformId, userId, null, AuthEventType.LOGIN_SUCCESS, null, null);
-        authEventService.record(platformId, userId, null, AuthEventType.LOGIN_SUCCESS, null, null);
-
-        ArgumentCaptor<AuthEvent> captor = ArgumentCaptor.forClass(AuthEvent.class);
-        verify(authEventRepository, times(2)).save(captor.capture());
-        assertThat(captor.getAllValues().get(0).getId()).isNotEqualTo(captor.getAllValues().get(1).getId());
     }
 }
