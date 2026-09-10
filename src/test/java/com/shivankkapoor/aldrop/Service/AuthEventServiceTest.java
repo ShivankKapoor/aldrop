@@ -22,11 +22,20 @@ import com.shivankkapoor.aldrop.Data.AuthEvent;
 import com.shivankkapoor.aldrop.Data.AuthEventType;
 import com.shivankkapoor.aldrop.Repository.AuthEventRepository;
 
+import tools.jackson.databind.ObjectMapper;
+
 @ExtendWith(MockitoExtension.class)
 class AuthEventServiceTest {
 
     @Mock
     private AuthEventRepository authEventRepository;
+
+    // unused directly - getLocation() never reaches it in these tests, since meridianBaseUrl is
+    // never set outside a real Spring context (no @Value resolution here), so the request URI is
+    // never absolute and the HTTP call always fails before any response body would be parsed.
+    // kept mocked anyway so a null field can't ever NPE if that flow changes.
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private AuthEventService authEventService;
@@ -58,6 +67,21 @@ class AuthEventServiceTest {
         assertThat(saved.getEventType()).isEqualTo(AuthEventType.LOGIN_SUCCESS);
         assertThat(saved.getIpAddress()).isEqualTo("203.0.113.5");
         assertThat(saved.getUserAgent()).isEqualTo("test-agent");
+        // meridian isn't reachable/configured in this unit test - location resolution should
+        // degrade to null rather than fail the whole event write.
+        assertThat(saved.getCity()).isNull();
+        assertThat(saved.getCountry()).isNull();
+    }
+
+    @Test
+    void recordSkipsLocationLookupAndLeavesCityAndCountryNullWhenIpIsNull() {
+        authEventService.record(platformId, userId, null, AuthEventType.LOGIN_SUCCESS, null, "test-agent");
+
+        ArgumentCaptor<AuthEvent> captor = ArgumentCaptor.forClass(AuthEvent.class);
+        verify(authEventRepository).save(captor.capture());
+        AuthEvent saved = captor.getValue();
+        assertThat(saved.getCity()).isNull();
+        assertThat(saved.getCountry()).isNull();
     }
 
     @Test

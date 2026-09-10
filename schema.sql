@@ -82,6 +82,8 @@ CREATE TABLE auth_events (
     attempted_username  TEXT,
     event_type          TEXT NOT NULL,
     ip_address          INET,
+    city                TEXT,
+    country             TEXT,
     user_agent          TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );

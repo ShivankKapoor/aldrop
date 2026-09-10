@@ -48,6 +48,12 @@ public class AuthEvent {
     @Column(name = "user_agent", nullable = true, unique = false)
     private String userAgent;
 
+    @Column(name = "city", nullable = true, unique = false)
+    private String city;
+
+    @Column(name = "country", nullable = true, unique = false)
+    private String country;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
