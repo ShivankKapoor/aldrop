@@ -448,6 +448,7 @@ class AuthServiceTest {
         assertThat(response.getUsername()).isEqualTo("alice");
         assertThat(response.getExpiresAt()).isEqualTo(session.getExpiresAt());
         verify(sessionRepository).save(session);
+        verifyAuthEventRecorded(AuthEventType.SESSION_VALIDATED, userId, null);
     }
 
     // ---- device binding ----

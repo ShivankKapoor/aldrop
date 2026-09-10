@@ -315,6 +315,8 @@ public class AuthService {
 
         Session saved = sessionRepository.save(session);
         log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
+        authEventService.record(platformId, user.getId(), null, AuthEventType.SESSION_VALIDATED,
+                requestDTO.getIpAddress(), requestDTO.getUserAgent());
 
         return new ValidateSessionResponseDTO(saved.getUserId(), user.getUsername(), saved.getExpiresAt());
     }
