@@ -670,3 +670,36 @@ Scenario: a platform's api key cannot logout-all another platform's session toke
     Then status 200
 
     * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: otherPlatformId })
+
+Scenario: clear caches requires admin auth
+    Given path 'platform/cache/clear'
+    When method post
+    Then status 401
+
+    Given path 'platform/cache/clear'
+    And header Authorization = 'Basic ' + Base64.getEncoder().encodeToString(('wrong:' + randomSuffix).getBytes())
+    When method post
+    Then status 401
+
+    Given path 'platform/cache/clear'
+    And header Authorization = platformAuth
+    When method post
+    Then status 401
+
+Scenario: clear caches succeeds and the platform keeps working afterwards
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#("kate-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 201
+
+    Given path 'platform/cache/clear'
+    And header Authorization = adminAuth
+    When method post
+    Then status 204
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#("lena-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 201

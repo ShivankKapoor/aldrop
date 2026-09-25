@@ -1,5 +1,6 @@
 package com.shivankkapoor.aldrop.Controller;
 
+import com.shivankkapoor.aldrop.Cache.DataCacheRegistry;
 import com.shivankkapoor.aldrop.Data.Platform;
 import com.shivankkapoor.aldrop.DTO.Request.CreatePlatformRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.UpdatePlatformStatusRequestDTO;
@@ -39,6 +40,9 @@ public class PlatformController {
 
     @Autowired
     private PlatformService platformService;
+
+    @Autowired
+    private DataCacheRegistry dataCacheRegistry;
 
     @Operation(summary = "Register a new platform",
             description = "Creates a platform and returns its API key. The key is shown in this "
@@ -130,6 +134,23 @@ public class PlatformController {
     public ResponseEntity<Void> delete(@PathVariable UUID id){
         log.info("Delete platform requested, id={}", id);
         platformService.delete(id);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Clear every cached lookup",
+            description = "Empties the platform and user-active caches, so the next request for each "
+                    + "reads the database again. Use it after changing platform or user rows directly "
+                    + "in the database, which bypasses the normal eviction. Rate-limit counters and the "
+                    + "TOTP replay guard are not cleared. It only affects this instance.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Every cached lookup was cleared."),
+            @ApiResponse(responseCode = "401", description = "Missing or wrong operator credentials.", content = @Content)
+    })
+    @PostMapping("/cache/clear")
+    public ResponseEntity<Void> clearCaches(){
+        log.warn("Clear data caches requested");
+        dataCacheRegistry.clearAll();
 
         return ResponseEntity.noContent().build();
     }
