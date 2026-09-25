@@ -2,6 +2,7 @@ package com.shivankkapoor.aldrop.Controller;
 
 import java.util.UUID;
 
+import com.shivankkapoor.aldrop.Cache.CachedPlatform;
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
@@ -122,8 +123,8 @@ public class UserController {
     public ResponseEntity<ValidateSessionResponseDTO> validate(
             @Valid @RequestBody ValidateSessionRequestDTO request,
             HttpServletRequest servletRequest){
-        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
-        ValidateSessionResponseDTO response = authService.validate(platformId, request);
+        CachedPlatform platform = (CachedPlatform) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ATTRIBUTE);
+        ValidateSessionResponseDTO response = authService.validate(platform, request);
 
         return ResponseEntity.ok(response);
     }

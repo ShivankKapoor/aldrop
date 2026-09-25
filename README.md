@@ -11,6 +11,7 @@ revoked session stops working the moment it is revoked rather than staying valid
 - PostgreSQL for platforms, users, sessions and TOTP challenges
 - Argon2 password hashing, SHA-256 token hashes at rest
 - No Spring Security: the two authentication schemes are plain servlet filters
+- In-process caches on the `/auth/validate` path (see [Caching](#caching))
 
 ## Two audiences, two credentials
 
@@ -62,6 +63,7 @@ both behind the platform admin credentials. With `ENV=PROD`, or unset, they answ
 | PATCH | `/platform/{id}/status` | Activate or deactivate. A deactivated platform's key stops being accepted; session rows survive, so reactivating restores any that have not expired. |
 | PATCH | `/platform/{id}/rotate-key` | Issue a replacement API key. The old one dies immediately; user sessions are unaffected. |
 | DELETE | `/platform/{id}` | Permanently delete the platform and, by cascade, all of its users, sessions and TOTP challenges. No undo. |
+| POST | `/platform/cache/clear` | Empty the lookup caches. Use it after editing rows directly in the database. |
 
 A platform is created with a session TTL (default 30 minutes), an optional cap on concurrent
 sessions per user, and two flags: `totpAvailable` and `requireDeviceBinding`.
@@ -81,7 +83,8 @@ sessions per user, and two flags: `totpAvailable` and `requireDeviceBinding`.
 
 ### Service
 
-`GET /` is a landing page; `GET /monitor` reports status, uptime and runtime details.
+`GET /` is a landing page; `GET /monitor` reports status, uptime, runtime details and cache hit rates.
+`/monitor` needs no credentials, so Aldrop is assumed to be reachable only from the internal network.
 
 ## Login
 
@@ -127,6 +130,20 @@ A platform created with `requireDeviceBinding` must send `ipAddress` and `userAg
 `/auth/login`, `/auth/login/verify-totp` and `/auth/validate`; without them the call is rejected
 with 400. A session then only validates from the same address and user agent it was issued to.
 Platforms without the flag may still send both — they are recorded either way.
+
+## Caching
+
+`/auth/validate` runs on every authenticated request, so the platform, the user's active flag and
+the session it looks up are cached in process (Caffeine) instead of read from the database each
+time. Only successful lookups are cached, and every write that revokes something (logout,
+logout-all, the per-user session limit, and platform deactivation, key rotation and deletion)
+evicts its entry, so revocation stays immediate. The one gap is a user's active flag, which can lag
+by up to its 10 second TTL because nothing changes it yet.
+
+After changing rows in the database directly, call `POST /platform/cache/clear`. The caches are per
+process, which is correct for a single container but would need a shared store with more replicas.
+Hit rates are on `/monitor`, and the TTLs are the `aldrop.cache.*` properties in
+`application.properties`.
 
 ## Errors and limits
 

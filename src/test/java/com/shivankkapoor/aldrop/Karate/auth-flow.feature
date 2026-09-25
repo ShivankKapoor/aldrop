@@ -103,6 +103,18 @@ Scenario: logout-all revokes every session for the user
     Then status 200
     * def tokenTwo = response.token
 
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenOne)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenTwo)' }
+    When method post
+    Then status 200
+
     Given path 'auth/logout-all'
     And header Authorization = platformAuth
     And request { token: '#(tokenOne)' }
@@ -145,6 +157,12 @@ Scenario: max sessions per platform evicts the oldest session
     When method post
     Then status 200
     * def tokenTwo = response.token
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenOne)' }
+    When method post
+    Then status 200
 
     Given path 'auth/login'
     And header Authorization = platformAuth
@@ -503,6 +521,9 @@ Scenario: monitor endpoint is reachable
     When method get
     Then status 200
     And match response.status == 'Up'
+    And match response.cache.platformCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
+    And match response.cache.userActiveCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
+    And match response.cache.sessionCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
 
 Scenario: login rejects a nonexistent username
     Given path 'auth/login'
@@ -670,3 +691,36 @@ Scenario: a platform's api key cannot logout-all another platform's session toke
     Then status 200
 
     * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: otherPlatformId })
+
+Scenario: clear caches requires admin auth
+    Given path 'platform/cache/clear'
+    When method post
+    Then status 401
+
+    Given path 'platform/cache/clear'
+    And header Authorization = 'Basic ' + Base64.getEncoder().encodeToString(('wrong:' + randomSuffix).getBytes())
+    When method post
+    Then status 401
+
+    Given path 'platform/cache/clear'
+    And header Authorization = platformAuth
+    When method post
+    Then status 401
+
+Scenario: clear caches succeeds and the platform keeps working afterwards
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#("kate-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 201
+
+    Given path 'platform/cache/clear'
+    And header Authorization = adminAuth
+    When method post
+    Then status 204
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#("lena-" + randomSuffix)', password: 'correcthorse123' }
+    When method post
+    Then status 201
