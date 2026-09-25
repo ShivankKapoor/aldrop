@@ -5,6 +5,7 @@ import java.util.function.Function;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
 import com.github.benmanes.caffeine.cache.Ticker;
 
 public class CaffeineDataCache<K, V> implements DataCache<K, V> {
@@ -37,5 +38,11 @@ public class CaffeineDataCache<K, V> implements DataCache<K, V> {
     @Override
     public void invalidateAll() {
         cache.invalidateAll();
+    }
+
+    @Override
+    public DataCacheStats stats() {
+        CacheStats stats = cache.stats();
+        return DataCacheStats.of(stats.hitCount(), stats.missCount(), cache.estimatedSize());
     }
 }

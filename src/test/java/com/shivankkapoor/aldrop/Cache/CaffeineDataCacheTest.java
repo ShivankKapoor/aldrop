@@ -84,4 +84,24 @@ class CaffeineDataCacheTest {
         assertThat(cache.get("a", key -> "a-reloaded")).isEqualTo("a-reloaded");
         assertThat(cache.get("b", key -> "b-reloaded")).isEqualTo("b-reloaded");
     }
+
+    @Test
+    void statsCountHitsMissesAndSize() {
+        cache.get("a", key -> "a");
+        cache.get("a", key -> "a");
+        cache.get("a", key -> "a");
+        cache.get("b", key -> null);
+
+        DataCacheStats stats = cache.stats();
+
+        assertThat(stats.hits()).isEqualTo(2);
+        assertThat(stats.misses()).isEqualTo(2);
+        assertThat(stats.hitRate()).isEqualTo(0.5);
+        assertThat(stats.size()).isEqualTo(1);
+    }
+
+    @Test
+    void hitRateIsZeroBeforeAnyRequest() {
+        assertThat(cache.stats().hitRate()).isZero();
+    }
 }

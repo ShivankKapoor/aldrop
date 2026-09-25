@@ -9,4 +9,6 @@ public interface DataCache<K, V> {
     void invalidate(K key);
 
     void invalidateAll();
+
+    DataCacheStats stats();
 }

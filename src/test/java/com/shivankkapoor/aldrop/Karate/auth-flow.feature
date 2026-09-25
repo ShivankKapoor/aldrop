@@ -503,6 +503,8 @@ Scenario: monitor endpoint is reachable
     When method get
     Then status 200
     And match response.status == 'Up'
+    And match response.cache.platformCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
+    And match response.cache.userActiveCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
 
 Scenario: login rejects a nonexistent username
     Given path 'auth/login'
