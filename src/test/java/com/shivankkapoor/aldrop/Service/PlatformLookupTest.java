@@ -34,7 +34,7 @@ class PlatformLookupTest {
 
     @BeforeEach
     void setUp() {
-        platformLookup = new PlatformLookup(new CaffeineDataCache<>(Duration.ofMinutes(1), 10),
+        platformLookup = new PlatformLookup(new CaffeineDataCache<>("platformCache", Duration.ofMinutes(1), 10),
                 platformRepository, new TokenHasher());
     }
 

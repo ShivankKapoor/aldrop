@@ -149,7 +149,7 @@ public class PlatformController {
     })
     @PostMapping("/cache/clear")
     public ResponseEntity<Void> clearCaches(){
-        log.warn("Clear data caches requested");
+        log.info("Clear data caches requested");
         dataCacheRegistry.clearAll();
 
         return ResponseEntity.noContent().build();

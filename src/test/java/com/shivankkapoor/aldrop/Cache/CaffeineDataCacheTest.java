@@ -25,7 +25,7 @@ class CaffeineDataCacheTest {
 
     private final AtomicLong nanos = new AtomicLong();
     private final Ticker ticker = nanos::get;
-    private final CaffeineDataCache<String, String> cache = new CaffeineDataCache<>(TTL, 100, ticker);
+    private final CaffeineDataCache<String, String> cache = new CaffeineDataCache<>("test", TTL, 100, ticker);
 
     @Test
     void loadsOnMissAndServesFromCacheOnHit() {
@@ -116,7 +116,7 @@ class CaffeineDataCacheTest {
 
     @Test
     void staysWithinTheMaximumSize() throws InterruptedException {
-        CaffeineDataCache<Integer, String> bounded = new CaffeineDataCache<>(Duration.ofMinutes(1), 10);
+        CaffeineDataCache<Integer, String> bounded = new CaffeineDataCache<>("test", Duration.ofMinutes(1), 10);
 
         for (int i = 0; i < 1000; i++) {
             bounded.get(i, key -> "v" + key);
@@ -131,7 +131,7 @@ class CaffeineDataCacheTest {
 
     @Test
     void concurrentMissesForTheSameKeyShareOneLoad() throws Exception {
-        CaffeineDataCache<String, String> shared = new CaffeineDataCache<>(TTL, 100);
+        CaffeineDataCache<String, String> shared = new CaffeineDataCache<>("test", TTL, 100);
         int threads = 16;
         AtomicInteger loads = new AtomicInteger();
         CountDownLatch ready = new CountDownLatch(threads);

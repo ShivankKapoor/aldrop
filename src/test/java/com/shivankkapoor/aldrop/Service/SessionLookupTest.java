@@ -34,7 +34,7 @@ class SessionLookupTest {
 
     @BeforeEach
     void setUp() {
-        sessionLookup = new SessionLookup(new CaffeineDataCache<>(Duration.ofMinutes(1), 10), sessionRepository);
+        sessionLookup = new SessionLookup(new CaffeineDataCache<>("sessionCache", Duration.ofMinutes(1), 10), sessionRepository);
     }
 
     private Session session(OffsetDateTime expiresAt) {

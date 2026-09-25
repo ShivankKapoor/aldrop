@@ -16,20 +16,20 @@ public class CacheConfig {
     public DataCache<String, CachedPlatform> platformCache(
             @Value("${aldrop.cache.platform-ttl:30s}") Duration ttl,
             @Value("${aldrop.cache.platform-max-size:1000}") long maxSize) {
-        return new CaffeineDataCache<>(ttl, maxSize);
+        return new CaffeineDataCache<>("platformCache", ttl, maxSize);
     }
 
     @Bean
     public DataCache<UUID, CachedUser> userActiveCache(
             @Value("${aldrop.cache.user-active-ttl:10s}") Duration ttl,
             @Value("${aldrop.cache.user-active-max-size:100000}") long maxSize) {
-        return new CaffeineDataCache<>(ttl, maxSize);
+        return new CaffeineDataCache<>("userActiveCache", ttl, maxSize);
     }
 
     @Bean
     public DataCache<String, CachedSession> sessionCache(
             @Value("${aldrop.cache.session-ttl:10s}") Duration ttl,
             @Value("${aldrop.cache.session-max-size:100000}") long maxSize) {
-        return new CaffeineDataCache<>(ttl, maxSize);
+        return new CaffeineDataCache<>("sessionCache", ttl, maxSize);
     }
 }

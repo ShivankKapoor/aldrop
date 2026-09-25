@@ -33,7 +33,7 @@ class UserLookupTest {
 
     @BeforeEach
     void setUp() {
-        cache = new CaffeineDataCache<>(Duration.ofMinutes(1), 10);
+        cache = new CaffeineDataCache<>("userActiveCache", Duration.ofMinutes(1), 10);
         userLookup = new UserLookup(cache, userRepository);
     }
 

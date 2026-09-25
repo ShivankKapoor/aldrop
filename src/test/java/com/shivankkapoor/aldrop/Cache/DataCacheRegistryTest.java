@@ -12,8 +12,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class DataCacheRegistryTest {
 
-    private final DataCache<String, String> first = new CaffeineDataCache<>(Duration.ofMinutes(1), 10);
-    private final DataCache<String, String> second = new CaffeineDataCache<>(Duration.ofMinutes(1), 10);
+    private final DataCache<String, String> first = new CaffeineDataCache<>("first", Duration.ofMinutes(1), 10);
+    private final DataCache<String, String> second = new CaffeineDataCache<>("second", Duration.ofMinutes(1), 10);
     private final DataCacheRegistry registry = new DataCacheRegistry(Map.of("first", first, "second", second));
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
