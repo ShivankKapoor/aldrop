@@ -20,7 +20,7 @@ public class CacheConfig {
     }
 
     @Bean
-    public DataCache<UUID, Boolean> userActiveCache(
+    public DataCache<UUID, CachedUser> userActiveCache(
             @Value("${aldrop.cache.user-active-ttl:10s}") Duration ttl,
             @Value("${aldrop.cache.user-active-max-size:100000}") long maxSize) {
         return new CaffeineDataCache<>(ttl, maxSize);

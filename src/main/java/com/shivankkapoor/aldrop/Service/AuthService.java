@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.shivankkapoor.aldrop.Cache.CachedPlatform;
+import com.shivankkapoor.aldrop.Cache.CachedUser;
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
@@ -63,6 +64,9 @@ public class AuthService {
 
     @Autowired
     private PlatformRepository platformRepository;
+
+    @Autowired
+    private UserLookup userLookup;
 
     @Autowired
     private PasswordHasher passwordHasher;
@@ -294,9 +298,9 @@ public class AuthService {
             throw e;
         }
 
-        User user;
+        CachedUser user;
         try {
-            user = resolveActiveUser(session, "validate");
+            user = resolveActiveCachedUser(session);
         } catch (InvalidSessionException e) {
             authEventService.record(platformId, session.getUserId(), null, AuthEventType.SESSION_INVALID,
                     requestDTO.getIpAddress(), requestDTO.getUserAgent());
@@ -314,11 +318,11 @@ public class AuthService {
         }
 
         Session saved = sessionRepository.save(session);
-        log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.getId(), platformId);
-        authEventService.record(platformId, user.getId(), null, AuthEventType.SESSION_VALIDATED,
+        log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.id(), platformId);
+        authEventService.record(platformId, user.id(), null, AuthEventType.SESSION_VALIDATED,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
 
-        return new ValidateSessionResponseDTO(saved.getUserId(), user.getUsername(), saved.getExpiresAt());
+        return new ValidateSessionResponseDTO(saved.getUserId(), user.username(), saved.getExpiresAt());
     }
 
     @Transactional
@@ -379,6 +383,14 @@ public class AuthService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private CachedUser resolveActiveCachedUser(Session session) {
+        return userLookup.findActiveById(session.getUserId()).orElseThrow(() -> {
+            log.warn("Session resolution rejected for validate, user missing or inactive, sessionId={}, userId={}",
+                    session.getId(), session.getUserId());
+            return new InvalidSessionException();
+        });
     }
 
     private User resolveActiveUser(Session session, String action) {
