@@ -2,7 +2,16 @@ package com.shivankkapoor.aldrop.Cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -103,5 +112,72 @@ class CaffeineDataCacheTest {
     @Test
     void hitRateIsZeroBeforeAnyRequest() {
         assertThat(cache.stats().hitRate()).isZero();
+    }
+
+    @Test
+    void staysWithinTheMaximumSize() throws InterruptedException {
+        CaffeineDataCache<Integer, String> bounded = new CaffeineDataCache<>(Duration.ofMinutes(1), 10);
+
+        for (int i = 0; i < 1000; i++) {
+            bounded.get(i, key -> "v" + key);
+        }
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (bounded.stats().size() > 10 && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(bounded.stats().size()).isLessThanOrEqualTo(10);
+    }
+
+    @Test
+    void concurrentMissesForTheSameKeyShareOneLoad() throws Exception {
+        CaffeineDataCache<String, String> shared = new CaffeineDataCache<>(TTL, 100);
+        int threads = 16;
+        AtomicInteger loads = new AtomicInteger();
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+
+        try {
+            List<Future<String>> results = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    go.await();
+                    return shared.get("k", key -> {
+                        loads.incrementAndGet();
+                        pause(200);
+                        return "v";
+                    });
+                }));
+            }
+            ready.await();
+            go.countDown();
+
+            for (Future<String> result : results) {
+                assertThat(result.get(5, TimeUnit.SECONDS)).isEqualTo("v");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(loads).hasValue(1);
+    }
+
+    @Test
+    void aFailingLoaderIsNotCachedAndDoesNotBlockALaterLoad() {
+        assertThatThrownBy(() -> cache.get("k", key -> {
+            throw new IllegalStateException("database down");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(cache.get("k", key -> "recovered")).isEqualTo("recovered");
+    }
+
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
