@@ -3,9 +3,8 @@ package com.shivankkapoor.aldrop.Service;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.shivankkapoor.aldrop.Cache.AfterCommit;
 import com.shivankkapoor.aldrop.Cache.CachedPlatform;
 import com.shivankkapoor.aldrop.Cache.DataCache;
 import com.shivankkapoor.aldrop.Data.Platform;
@@ -36,15 +35,6 @@ public class PlatformLookup {
 
     public void evict(String apiKey) {
         String key = tokenHasher.hash(apiKey);
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    cache.invalidate(key);
-                }
-            });
-        } else {
-            cache.invalidate(key);
-        }
+        AfterCommit.run(() -> cache.invalidate(key));
     }
 }

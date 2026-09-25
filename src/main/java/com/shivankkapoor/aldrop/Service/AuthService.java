@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.shivankkapoor.aldrop.Cache.CachedPlatform;
+import com.shivankkapoor.aldrop.Cache.CachedSession;
 import com.shivankkapoor.aldrop.Cache.CachedUser;
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
@@ -67,6 +68,9 @@ public class AuthService {
 
     @Autowired
     private UserLookup userLookup;
+
+    @Autowired
+    private SessionLookup sessionLookup;
 
     @Autowired
     private PasswordHasher passwordHasher;
@@ -286,12 +290,11 @@ public class AuthService {
         return new ConfirmTotpResponseDTO(Arrays.asList(backupCodes));
     }
 
-    @Transactional
     public ValidateSessionResponseDTO validate(CachedPlatform platform, ValidateSessionRequestDTO requestDTO) {
         UUID platformId = platform.id();
-        Session session;
+        CachedSession session;
         try {
-            session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
+            session = resolveActiveCachedSession(platformId, requestDTO.getToken());
         } catch (InvalidSessionException e) {
             authEventService.record(platformId, null, null, AuthEventType.SESSION_INVALID,
                     requestDTO.getIpAddress(), requestDTO.getUserAgent());
@@ -302,7 +305,7 @@ public class AuthService {
         try {
             user = resolveActiveCachedUser(session);
         } catch (InvalidSessionException e) {
-            authEventService.record(platformId, session.getUserId(), null, AuthEventType.SESSION_INVALID,
+            authEventService.record(platformId, session.userId(), null, AuthEventType.SESSION_INVALID,
                     requestDTO.getIpAddress(), requestDTO.getUserAgent());
             throw e;
         }
@@ -311,18 +314,17 @@ public class AuthService {
             try {
                 enforceDeviceBinding(session, requestDTO.getIpAddress(), requestDTO.getUserAgent());
             } catch (DeviceBindingRequiredException | InvalidSessionException e) {
-                authEventService.record(platformId, session.getUserId(), null, AuthEventType.DEVICE_BINDING_REJECTED,
+                authEventService.record(platformId, session.userId(), null, AuthEventType.DEVICE_BINDING_REJECTED,
                         requestDTO.getIpAddress(), requestDTO.getUserAgent());
                 throw e;
             }
         }
 
-        Session saved = sessionRepository.save(session);
-        log.info("Session validated, sessionId={}, userId={}, platformId={}", saved.getId(), user.id(), platformId);
+        log.info("Session validated, sessionId={}, userId={}, platformId={}", session.id(), user.id(), platformId);
         authEventService.record(platformId, user.id(), null, AuthEventType.SESSION_VALIDATED,
                 requestDTO.getIpAddress(), requestDTO.getUserAgent());
 
-        return new ValidateSessionResponseDTO(saved.getUserId(), user.username(), saved.getExpiresAt());
+        return new ValidateSessionResponseDTO(session.userId(), user.username(), session.expiresAt());
     }
 
     @Transactional
@@ -332,6 +334,7 @@ public class AuthService {
                 .ifPresentOrElse(
                         session -> {
                             sessionRepository.delete(session);
+                            sessionLookup.evict(session.getTokenHash());
                             log.info("Logout succeeded, sessionId={}, userId={}, platformId={}",
                                     session.getId(), session.getUserId(), platformId);
                             authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT,
@@ -350,6 +353,7 @@ public class AuthService {
                             List<Session> sessions = sessionRepository
                                     .findByUserIdAndPlatformId(session.getUserId(), platformId);
                             sessionRepository.deleteAll(sessions);
+                            sessions.forEach(revoked -> sessionLookup.evict(revoked.getTokenHash()));
                             log.info("Logout-all succeeded, userId={}, platformId={}, sessionsRevoked={}",
                                     session.getUserId(), platformId, sessions.size());
                             authEventService.record(platformId, session.getUserId(), null, AuthEventType.LOGOUT_ALL,
@@ -371,12 +375,24 @@ public class AuthService {
         return session;
     }
 
-    private void enforceDeviceBinding(Session session, String ipAddress, String userAgent) {
+    private CachedSession resolveActiveCachedSession(UUID platformId, String token) {
+        CachedSession session = sessionLookup.findActiveByTokenHash(tokenHasher.hash(token))
+                .orElseThrow(InvalidSessionException::new);
+
+        if (!session.platformId().equals(platformId) || session.expiresAt().isBefore(OffsetDateTime.now())) {
+            log.warn("Session resolution rejected for validate, platformId={}, sessionId={}", platformId, session.id());
+            throw new InvalidSessionException();
+        }
+
+        return session;
+    }
+
+    private void enforceDeviceBinding(CachedSession session, String ipAddress, String userAgent) {
         if (isBlank(ipAddress) || isBlank(userAgent)) {
             throw new DeviceBindingRequiredException();
         }
-        if (!ipAddress.equals(session.getIpAddress()) || !userAgent.equals(session.getUserAgent())) {
-            log.warn("Session resolution rejected for validate, device mismatch, sessionId={}", session.getId());
+        if (!ipAddress.equals(session.ipAddress()) || !userAgent.equals(session.userAgent())) {
+            log.warn("Session resolution rejected for validate, device mismatch, sessionId={}", session.id());
             throw new InvalidSessionException();
         }
     }
@@ -385,10 +401,10 @@ public class AuthService {
         return value == null || value.isBlank();
     }
 
-    private CachedUser resolveActiveCachedUser(Session session) {
-        return userLookup.findActiveById(session.getUserId()).orElseThrow(() -> {
+    private CachedUser resolveActiveCachedUser(CachedSession session) {
+        return userLookup.findActiveById(session.userId()).orElseThrow(() -> {
             log.warn("Session resolution rejected for validate, user missing or inactive, sessionId={}, userId={}",
-                    session.getId(), session.getUserId());
+                    session.id(), session.userId());
             return new InvalidSessionException();
         });
     }

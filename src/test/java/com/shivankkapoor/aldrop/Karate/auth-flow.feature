@@ -103,6 +103,18 @@ Scenario: logout-all revokes every session for the user
     Then status 200
     * def tokenTwo = response.token
 
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenOne)' }
+    When method post
+    Then status 200
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenTwo)' }
+    When method post
+    Then status 200
+
     Given path 'auth/logout-all'
     And header Authorization = platformAuth
     And request { token: '#(tokenOne)' }
@@ -145,6 +157,12 @@ Scenario: max sessions per platform evicts the oldest session
     When method post
     Then status 200
     * def tokenTwo = response.token
+
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(tokenOne)' }
+    When method post
+    Then status 200
 
     Given path 'auth/login'
     And header Authorization = platformAuth
@@ -505,6 +523,7 @@ Scenario: monitor endpoint is reachable
     And match response.status == 'Up'
     And match response.cache.platformCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
     And match response.cache.userActiveCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
+    And match response.cache.sessionCache == { hits: '#number', misses: '#number', hitRate: '#number', size: '#number' }
 
 Scenario: login rejects a nonexistent username
     Given path 'auth/login'

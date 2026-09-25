@@ -25,4 +25,11 @@ public class CacheConfig {
             @Value("${aldrop.cache.user-active-max-size:100000}") long maxSize) {
         return new CaffeineDataCache<>(ttl, maxSize);
     }
+
+    @Bean
+    public DataCache<String, CachedSession> sessionCache(
+            @Value("${aldrop.cache.session-ttl:10s}") Duration ttl,
+            @Value("${aldrop.cache.session-max-size:100000}") long maxSize) {
+        return new CaffeineDataCache<>(ttl, maxSize);
+    }
 }

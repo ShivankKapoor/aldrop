@@ -65,7 +65,7 @@ class DataCacheRegistryTest {
     @Test
     void statsUseTheBeanNamesFromCacheConfig() {
         contextRunner.run(context -> assertThat(context.getBean(DataCacheRegistry.class).stats())
-                .containsOnlyKeys("platformCache", "userActiveCache"));
+                .containsOnlyKeys("platformCache", "userActiveCache", "sessionCache"));
     }
 
     @Test

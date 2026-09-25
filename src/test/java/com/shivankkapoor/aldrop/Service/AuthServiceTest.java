@@ -32,6 +32,7 @@ import com.shivankkapoor.aldrop.Data.Session;
 import com.shivankkapoor.aldrop.Data.TotpSession;
 import com.shivankkapoor.aldrop.Data.User;
 import com.shivankkapoor.aldrop.Cache.CachedPlatform;
+import com.shivankkapoor.aldrop.Cache.CachedSession;
 import com.shivankkapoor.aldrop.Cache.CachedUser;
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
@@ -73,6 +74,9 @@ class AuthServiceTest {
 
     @Mock
     private UserLookup userLookup;
+
+    @Mock
+    private SessionLookup sessionLookup;
 
     @Mock
     private PasswordHasher passwordHasher;
@@ -346,6 +350,7 @@ class AuthServiceTest {
         verify(sessionRepository, never())
                 .findByUserIdAndPlatformIdAndExpiresAtAfterOrderByCreatedAtAsc(any(), any(), any());
         verify(sessionRepository, never()).deleteAll(any());
+        verify(sessionLookup, never()).evict(any());
     }
 
     @Test
@@ -356,8 +361,10 @@ class AuthServiceTest {
 
         Session oldest = new Session();
         oldest.setId(UUID.randomUUID());
+        oldest.setTokenHash("hash-oldest");
         Session newer = new Session();
         newer.setId(UUID.randomUUID());
+        newer.setTokenHash("hash-newer");
 
         when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
         when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
@@ -374,6 +381,8 @@ class AuthServiceTest {
         ArgumentCaptor<List<Session>> captor = ArgumentCaptor.forClass(List.class);
         verify(sessionRepository).deleteAll(captor.capture());
         assertThat(captor.getValue()).containsExactly(oldest);
+        verify(sessionLookup).evict("hash-oldest");
+        verify(sessionLookup, never()).evict("hash-newer");
     }
 
     @Test
@@ -397,6 +406,7 @@ class AuthServiceTest {
         authService.login(platformId, request);
 
         verify(sessionRepository, never()).deleteAll(any());
+        verify(sessionLookup, never()).evict(any());
     }
 
     @Test
@@ -407,12 +417,16 @@ class AuthServiceTest {
 
         Session oldest = new Session();
         oldest.setId(UUID.randomUUID());
+        oldest.setTokenHash("hash-oldest");
         Session secondOldest = new Session();
         secondOldest.setId(UUID.randomUUID());
+        secondOldest.setTokenHash("hash-second");
         Session thirdOldest = new Session();
         thirdOldest.setId(UUID.randomUUID());
+        thirdOldest.setTokenHash("hash-third");
         Session newest = new Session();
         newest.setId(UUID.randomUUID());
+        newest.setTokenHash("hash-newest");
 
         when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
         when(passwordHasher.matches("correcthorse", "hashed-password")).thenReturn(true);
@@ -429,6 +443,10 @@ class AuthServiceTest {
         ArgumentCaptor<List<Session>> captor = ArgumentCaptor.forClass(List.class);
         verify(sessionRepository).deleteAll(captor.capture());
         assertThat(captor.getValue()).containsExactly(oldest, secondOldest, thirdOldest);
+        verify(sessionLookup).evict("hash-oldest");
+        verify(sessionLookup).evict("hash-second");
+        verify(sessionLookup).evict("hash-third");
+        verify(sessionLookup, never()).evict("hash-newest");
     }
 
     // ---- validate ----
@@ -446,16 +464,14 @@ class AuthServiceTest {
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.of(new CachedUser(userId, "alice")));
-        when(sessionRepository.save(session)).thenReturn(session);
 
         ValidateSessionResponseDTO response = authService.validate(cachedPlatform(false), request);
 
         assertThat(response.getUserId()).isEqualTo(userId);
         assertThat(response.getUsername()).isEqualTo("alice");
         assertThat(response.getExpiresAt()).isEqualTo(session.getExpiresAt());
-        verify(sessionRepository).save(session);
         verifyAuthEventRecorded(AuthEventType.SESSION_VALIDATED, userId, null);
     }
 
@@ -516,13 +532,12 @@ class AuthServiceTest {
         session.setUserAgent("test-agent");
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.of(new CachedUser(userId, "alice")));
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(true), request))
                 .isInstanceOf(DeviceBindingRequiredException.class);
 
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
@@ -543,13 +558,12 @@ class AuthServiceTest {
         session.setUserAgent("test-agent");
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.of(new CachedUser(userId, "alice")));
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(true), request))
                 .isInstanceOf(InvalidSessionException.class);
 
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.DEVICE_BINDING_REJECTED, userId, null);
     }
 
@@ -609,14 +623,12 @@ class AuthServiceTest {
         session.setUserAgent("test-agent");
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.of(new CachedUser(userId, "alice")));
-        when(sessionRepository.save(session)).thenReturn(session);
 
         ValidateSessionResponseDTO response = authService.validate(cachedPlatform(false), request);
 
         assertThat(response.getUserId()).isEqualTo(userId);
-        verify(sessionRepository).save(session);
     }
 
     @Test
@@ -636,14 +648,12 @@ class AuthServiceTest {
         session.setUserAgent("test-agent");
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.of(new CachedUser(userId, "alice")));
-        when(sessionRepository.save(session)).thenReturn(session);
 
         ValidateSessionResponseDTO response = authService.validate(cachedPlatform(true), request);
 
         assertThat(response.getUserId()).isEqualTo(userId);
-        verify(sessionRepository).save(session);
     }
 
     @Test
@@ -652,7 +662,7 @@ class AuthServiceTest {
         request.setToken("unknown-token");
 
         when(tokenHasher.hash("unknown-token")).thenReturn("hashed-unknown-token");
-        when(sessionRepository.findByTokenHash("hashed-unknown-token")).thenReturn(Optional.empty());
+        when(sessionLookup.findActiveByTokenHash("hashed-unknown-token")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(false), request))
                 .isInstanceOf(InvalidSessionException.class);
@@ -673,13 +683,12 @@ class AuthServiceTest {
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(false), request))
                 .isInstanceOf(InvalidSessionException.class);
 
         verify(userLookup, never()).findActiveById(any());
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, null, null);
     }
 
@@ -696,13 +705,12 @@ class AuthServiceTest {
         session.setExpiresAt(OffsetDateTime.now().minusMinutes(1));
 
         when(tokenHasher.hash("expired-token")).thenReturn("hashed-expired-token");
-        when(sessionRepository.findByTokenHash("hashed-expired-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-expired-token")).thenReturn(Optional.of(CachedSession.from(session)));
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(false), request))
                 .isInstanceOf(InvalidSessionException.class);
 
         verify(userLookup, never()).findActiveById(any());
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, null, null);
     }
 
@@ -720,13 +728,12 @@ class AuthServiceTest {
 
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(false), request))
                 .isInstanceOf(InvalidSessionException.class);
 
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, userId, null);
     }
 
@@ -743,13 +750,12 @@ class AuthServiceTest {
         session.setExpiresAt(OffsetDateTime.now().plusHours(1));
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
-        when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
+        when(sessionLookup.findActiveByTokenHash("hashed-valid-token")).thenReturn(Optional.of(CachedSession.from(session)));
         when(userLookup.findActiveById(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.validate(cachedPlatform(false), request))
                 .isInstanceOf(InvalidSessionException.class);
 
-        verify(sessionRepository, never()).save(any());
         verifyAuthEventRecorded(AuthEventType.SESSION_INVALID, userId, null);
     }
 
@@ -762,6 +768,7 @@ class AuthServiceTest {
 
         Session session = new Session();
         session.setId(UUID.randomUUID());
+        session.setTokenHash("hashed-valid-token");
         session.setPlatformId(platformId);
         session.setUserId(userId);
 
@@ -771,6 +778,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository).delete(session);
+        verify(sessionLookup).evict("hashed-valid-token");
         verifyAuthEventRecorded(AuthEventType.LOGOUT, userId, null);
     }
 
@@ -785,6 +793,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository, never()).delete(any());
+        verify(sessionLookup, never()).evict(any());
         verifyNoAuthEventRecorded();
     }
 
@@ -804,6 +813,7 @@ class AuthServiceTest {
         authService.logout(platformId, request);
 
         verify(sessionRepository, never()).delete(any());
+        verify(sessionLookup, never()).evict(any());
         verifyNoAuthEventRecorded();
     }
 
@@ -816,11 +826,13 @@ class AuthServiceTest {
 
         Session session = new Session();
         session.setId(UUID.randomUUID());
+        session.setTokenHash("hash-one");
         session.setPlatformId(platformId);
         session.setUserId(userId);
 
         Session other = new Session();
         other.setId(UUID.randomUUID());
+        other.setTokenHash("hash-two");
 
         when(tokenHasher.hash("valid-token")).thenReturn("hashed-valid-token");
         when(sessionRepository.findByTokenHash("hashed-valid-token")).thenReturn(Optional.of(session));
@@ -829,6 +841,8 @@ class AuthServiceTest {
         authService.logoutAll(platformId, request);
 
         verify(sessionRepository).deleteAll(List.of(session, other));
+        verify(sessionLookup).evict("hash-one");
+        verify(sessionLookup).evict("hash-two");
         verifyAuthEventRecorded(AuthEventType.LOGOUT_ALL, userId, null);
     }
 
@@ -844,6 +858,7 @@ class AuthServiceTest {
 
         verify(sessionRepository, never()).findByUserIdAndPlatformId(any(), any());
         verify(sessionRepository, never()).deleteAll(any());
+        verify(sessionLookup, never()).evict(any());
         verifyNoAuthEventRecorded();
     }
 
@@ -864,6 +879,7 @@ class AuthServiceTest {
 
         verify(sessionRepository, never()).findByUserIdAndPlatformId(any(), any());
         verify(sessionRepository, never()).deleteAll(any());
+        verify(sessionLookup, never()).evict(any());
         verifyNoAuthEventRecorded();
     }
 

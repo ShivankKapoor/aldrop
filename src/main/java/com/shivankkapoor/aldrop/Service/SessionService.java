@@ -47,6 +47,9 @@ public class SessionService {
     @Autowired
     private AuthEventService authEventService;
 
+    @Autowired
+    private SessionLookup sessionLookup;
+
     @Transactional
     public LoginResponseDTO createSessionResponse(User user, Platform platform, UUID platformId,
             String ipAddress, String userAgent) {
@@ -65,6 +68,7 @@ public class SessionService {
             if (numToEvict > 0) {
                 List<Session> toEvict = activeSessions.subList(0, numToEvict);
                 sessionRepository.deleteAll(toEvict);
+                toEvict.forEach(evicted -> sessionLookup.evict(evicted.getTokenHash()));
                 log.info("Evicted {} oldest session(s) for userId={}, platformId={} to respect maxSessionsPerUser={}",
                         toEvict.size(), user.getId(), platformId, maxSessionsPerUser);
             }
