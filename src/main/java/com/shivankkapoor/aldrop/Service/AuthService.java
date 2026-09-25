@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.shivankkapoor.aldrop.Cache.CachedPlatform;
 import com.shivankkapoor.aldrop.DTO.Request.ConfirmTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
@@ -282,7 +283,8 @@ public class AuthService {
     }
 
     @Transactional
-    public ValidateSessionResponseDTO validate(UUID platformId, ValidateSessionRequestDTO requestDTO) {
+    public ValidateSessionResponseDTO validate(CachedPlatform platform, ValidateSessionRequestDTO requestDTO) {
+        UUID platformId = platform.id();
         Session session;
         try {
             session = resolveActiveSession(platformId, requestDTO.getToken(), "validate");
@@ -301,9 +303,7 @@ public class AuthService {
             throw e;
         }
 
-        Platform platform = platformRepository.findById(platformId)
-                .orElseThrow(() -> new PlatformNotFoundException(platformId));
-        if (platform.isRequireDeviceBinding()) {
+        if (platform.requireDeviceBinding()) {
             try {
                 enforceDeviceBinding(session, requestDTO.getIpAddress(), requestDTO.getUserAgent());
             } catch (DeviceBindingRequiredException | InvalidSessionException e) {

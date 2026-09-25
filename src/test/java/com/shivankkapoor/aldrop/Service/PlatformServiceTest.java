@@ -35,6 +35,9 @@ class PlatformServiceTest {
     @Mock
     private TokenGenerator tokenGenerator;
 
+    @Mock
+    private PlatformLookup platformLookup;
+
     @InjectMocks
     private PlatformService platformService;
 
@@ -95,6 +98,7 @@ class PlatformServiceTest {
         UUID id = UUID.randomUUID();
         Platform platform = new Platform();
         platform.setId(id);
+        platform.setApiKey("acme-key");
         platform.setActive(true);
 
         when(platformRepository.findById(id)).thenReturn(Optional.of(platform));
@@ -103,6 +107,7 @@ class PlatformServiceTest {
         Platform result = platformService.updateActiveStatus(id, false);
 
         assertThat(result.isActive()).isFalse();
+        verify(platformLookup).evict("acme-key");
         ArgumentCaptor<Platform> captor = ArgumentCaptor.forClass(Platform.class);
         verify(platformRepository).save(captor.capture());
         assertThat(captor.getValue().isActive()).isFalse();
@@ -117,6 +122,7 @@ class PlatformServiceTest {
                 .isInstanceOf(PlatformNotFoundException.class);
 
         verify(platformRepository, never()).save(any());
+        verify(platformLookup, never()).evict(any());
     }
 
     @Test
@@ -136,6 +142,8 @@ class PlatformServiceTest {
         ArgumentCaptor<Platform> captor = ArgumentCaptor.forClass(Platform.class);
         verify(platformRepository).save(captor.capture());
         assertThat(captor.getValue().getApiKey()).isEqualTo("new-api-key");
+        verify(platformLookup).evict("old-api-key");
+        verify(platformLookup, never()).evict("new-api-key");
     }
 
     @Test
@@ -174,6 +182,7 @@ class PlatformServiceTest {
                 .isInstanceOf(PlatformNotFoundException.class);
 
         verify(platformRepository, never()).save(any());
+        verify(platformLookup, never()).evict(any());
     }
 
     @Test
@@ -181,12 +190,14 @@ class PlatformServiceTest {
         UUID id = UUID.randomUUID();
         Platform platform = new Platform();
         platform.setId(id);
+        platform.setApiKey("acme-key");
 
         when(platformRepository.findById(id)).thenReturn(Optional.of(platform));
 
         platformService.delete(id);
 
         verify(platformRepository).delete(platform);
+        verify(platformLookup).evict("acme-key");
     }
 
     @Test

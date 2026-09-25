@@ -15,8 +15,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.shivankkapoor.aldrop.Data.Platform;
-import com.shivankkapoor.aldrop.Repository.PlatformRepository;
+import com.shivankkapoor.aldrop.Cache.CachedPlatform;
+import com.shivankkapoor.aldrop.Service.PlatformLookup;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -27,7 +27,7 @@ class PlatformApiKeyAuthFilterTest {
 
     private static final String VALID_API_KEY = "valid-api-key";
 
-    private PlatformRepository platformRepository;
+    private PlatformLookup platformLookup;
     private PlatformApiKeyAuthFilter filter;
     private HttpServletRequest request;
     private HttpServletResponse response;
@@ -36,8 +36,8 @@ class PlatformApiKeyAuthFilterTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        platformRepository = mock(PlatformRepository.class);
-        filter = new PlatformApiKeyAuthFilter(platformRepository);
+        platformLookup = mock(PlatformLookup.class);
+        filter = new PlatformApiKeyAuthFilter(platformLookup);
         request = mock(HttpServletRequest.class);
         response = mock(HttpServletResponse.class);
         filterChain = mock(FilterChain.class);
@@ -51,16 +51,15 @@ class PlatformApiKeyAuthFilterTest {
     @Test
     void allowsRequestWithValidActiveApiKey() throws ServletException, IOException {
         UUID platformId = UUID.randomUUID();
-        Platform platform = new Platform();
-        platform.setId(platformId);
-        platform.setActive(true);
+        CachedPlatform platform = new CachedPlatform(platformId, true, true);
 
         when(request.getHeader("Authorization")).thenReturn("Bearer " + VALID_API_KEY);
-        when(platformRepository.findByApiKey(VALID_API_KEY)).thenReturn(Optional.of(platform));
+        when(platformLookup.findActiveByApiKey(VALID_API_KEY)).thenReturn(Optional.of(platform));
 
         filter.doFilterInternal(request, response, filterChain);
 
         verify(request).setAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE, platformId);
+        verify(request).setAttribute(PlatformApiKeyAuthFilter.PLATFORM_ATTRIBUTE, platform);
         verify(filterChain).doFilter(request, response);
         verify(response, never()).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
@@ -68,28 +67,13 @@ class PlatformApiKeyAuthFilterTest {
     @Test
     void rejectsWhenApiKeyUnknown() throws ServletException, IOException {
         when(request.getHeader("Authorization")).thenReturn("Bearer unknown-key");
-        when(platformRepository.findByApiKey("unknown-key")).thenReturn(Optional.empty());
+        when(platformLookup.findActiveByApiKey("unknown-key")).thenReturn(Optional.empty());
 
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain, never()).doFilter(request, response);
         verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         assertThat(responseBody.toString()).isEqualTo("{\"error\":\"Unauthorized\"}");
-    }
-
-    @Test
-    void rejectsWhenPlatformIsInactive() throws ServletException, IOException {
-        Platform inactivePlatform = new Platform();
-        inactivePlatform.setId(UUID.randomUUID());
-        inactivePlatform.setActive(false);
-
-        when(request.getHeader("Authorization")).thenReturn("Bearer " + VALID_API_KEY);
-        when(platformRepository.findByApiKey(VALID_API_KEY)).thenReturn(Optional.of(inactivePlatform));
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain, never()).doFilter(request, response);
-        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test
@@ -100,7 +84,7 @@ class PlatformApiKeyAuthFilterTest {
 
         verify(filterChain, never()).doFilter(request, response);
         verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        verify(platformRepository, never()).findByApiKey(org.mockito.ArgumentMatchers.any());
+        verify(platformLookup, never()).findActiveByApiKey(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -111,6 +95,6 @@ class PlatformApiKeyAuthFilterTest {
 
         verify(filterChain, never()).doFilter(request, response);
         verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        verify(platformRepository, never()).findByApiKey(org.mockito.ArgumentMatchers.any());
+        verify(platformLookup, never()).findActiveByApiKey(org.mockito.ArgumentMatchers.any());
     }
 }

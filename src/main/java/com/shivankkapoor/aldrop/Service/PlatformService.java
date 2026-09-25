@@ -28,6 +28,9 @@ public class PlatformService {
     @Autowired
     private TokenGenerator tokenGenerator;
 
+    @Autowired
+    private PlatformLookup platformLookup;
+
     public Platform create(CreatePlatformRequestDTO requestDTO){
         if (platformRepository.findByName(requestDTO.getName()).isPresent()) {
             log.warn("Platform creation rejected, name already taken: {}", requestDTO.getName());
@@ -56,6 +59,7 @@ public class PlatformService {
         platform.setActive(isActive);
 
         Platform saved = platformRepository.save(platform);
+        platformLookup.evict(saved.getApiKey());
         log.info("Platform status updated, id={}, isActive={}", saved.getId(), isActive);
         return saved;
     }
@@ -64,9 +68,11 @@ public class PlatformService {
         Platform platform = platformRepository.findById(id)
                 .orElseThrow(() -> new PlatformNotFoundException(id));
 
+        String previousApiKey = platform.getApiKey();
         platform.setApiKey(tokenGenerator.generate(API_KEY_BYTES));
 
         Platform saved = platformRepository.save(platform);
+        platformLookup.evict(previousApiKey);
         log.info("Platform API key rotated, id={}, name={}", saved.getId(), saved.getName());
         return saved;
     }
@@ -76,6 +82,7 @@ public class PlatformService {
                 .orElseThrow(() -> new PlatformNotFoundException(id));
 
         platformRepository.delete(platform);
+        platformLookup.evict(platform.getApiKey());
         log.info("Platform deleted, id={}, name={}", platform.getId(), platform.getName());
     }
 

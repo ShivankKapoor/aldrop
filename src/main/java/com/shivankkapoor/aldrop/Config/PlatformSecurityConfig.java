@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import com.shivankkapoor.aldrop.Filter.DocsAccessFilter;
 import com.shivankkapoor.aldrop.Filter.PlatformApiKeyAuthFilter;
 import com.shivankkapoor.aldrop.Filter.PlatformBasicAuthFilter;
-import com.shivankkapoor.aldrop.Repository.PlatformRepository;
+import com.shivankkapoor.aldrop.Service.PlatformLookup;
 
 @Configuration
 public class PlatformSecurityConfig {
@@ -28,7 +28,7 @@ public class PlatformSecurityConfig {
     private String env;
 
     @Autowired
-    private PlatformRepository platformRepository;
+    private PlatformLookup platformLookup;
 
     @Bean
     public FilterRegistrationBean<PlatformBasicAuthFilter> platformBasicAuthFilter() {
@@ -60,7 +60,7 @@ public class PlatformSecurityConfig {
     @Bean
     public FilterRegistrationBean<PlatformApiKeyAuthFilter> platformApiKeyAuthFilter() {
         FilterRegistrationBean<PlatformApiKeyAuthFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new PlatformApiKeyAuthFilter(platformRepository));
+        registration.setFilter(new PlatformApiKeyAuthFilter(platformLookup));
         registration.addUrlPatterns("/auth/*");
         return registration;
     }
