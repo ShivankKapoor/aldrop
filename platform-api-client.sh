@@ -116,6 +116,13 @@ do_totp_confirm() {
     print_response "$response"
 }
 
+do_reset_password() {
+    username="$(prompt "Username")"
+    new_password="$(prompt_secret "New password")"
+    response="$(post_json "/auth/reset-password" "{\"username\": \"${username}\", \"newPassword\": \"${new_password}\"}")"
+    print_response "$response"
+}
+
 while true; do
     echo
     echo "Aldrop platform API client (${BASE_URL})"
@@ -127,7 +134,8 @@ while true; do
     echo "  6) Logout all sessions"
     echo "  7) Start two-factor enrolment"
     echo "  8) Confirm two-factor enrolment"
-    echo "  9) Exit"
+    echo "  9) Reset a user's password"
+    echo "  0) Exit"
     choice="$(prompt "Select an option")"
 
     case "$choice" in
@@ -139,7 +147,8 @@ while true; do
         6) do_logout_all ;;
         7) do_totp_enable ;;
         8) do_totp_confirm ;;
-        9) exit 0 ;;
+        9) do_reset_password ;;
+        0) exit 0 ;;
         *) echo "Invalid option: $choice" ;;
     esac
 done

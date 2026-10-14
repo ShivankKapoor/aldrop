@@ -724,3 +724,119 @@ Scenario: clear caches succeeds and the platform keeps working afterwards
     And request { username: '#("lena-" + randomSuffix)', password: 'correcthorse123' }
     When method post
     Then status 201
+
+Scenario: reset-password swaps the credentials and revokes existing sessions
+    * def username = 'rhea-' + randomSuffix
+    * def password = 'correcthorse123'
+    * def newPassword = 'brandnewhorse456'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+    * def oldToken = response.token
+
+    Given path 'auth/reset-password'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', newPassword: '#(newPassword)' }
+    When method post
+    Then status 204
+
+    # the session from before the reset is gone
+    Given path 'auth/validate'
+    And header Authorization = platformAuth
+    And request { token: '#(oldToken)' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 401
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(newPassword)' }
+    When method post
+    Then status 200
+    And match response.token == '#present'
+
+Scenario: reset-password rejects an unknown user and a too-short or blank password
+    * def username = 'sam-' + randomSuffix
+
+    Given path 'auth/reset-password'
+    And header Authorization = platformAuth
+    And request { username: '#("nobody-" + randomSuffix)', newPassword: 'brandnewhorse456' }
+    When method post
+    Then status 404
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'correcthorse123' }
+    When method post
+    Then status 201
+
+    Given path 'auth/reset-password'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', newPassword: 'short' }
+    When method post
+    Then status 400
+
+    Given path 'auth/reset-password'
+    And header Authorization = platformAuth
+    And request { username: '', newPassword: 'brandnewhorse456' }
+    When method post
+    Then status 400
+
+    # the failed attempts changed nothing
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: 'correcthorse123' }
+    When method post
+    Then status 200
+
+Scenario: reset-password requires a valid platform api key and cannot cross platforms
+    Given path 'platform/create'
+    And header Authorization = adminAuth
+    And request { name: '#("karate-other-" + randomSuffix)' }
+    When method post
+    Then status 201
+    * def otherPlatformId = response.id
+    * def otherPlatformAuth = 'Bearer ' + response.apiKey
+
+    * def username = 'tess-' + randomSuffix
+    * def password = 'correcthorse123'
+
+    Given path 'auth/register'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 201
+
+    Given path 'auth/reset-password'
+    And request { username: '#(username)', newPassword: 'brandnewhorse456' }
+    When method post
+    Then status 401
+
+    # the other platform has no such user, so it cannot reset this one's password
+    Given path 'auth/reset-password'
+    And header Authorization = otherPlatformAuth
+    And request { username: '#(username)', newPassword: 'brandnewhorse456' }
+    When method post
+    Then status 404
+
+    Given path 'auth/login'
+    And header Authorization = platformAuth
+    And request { username: '#(username)', password: '#(password)' }
+    When method post
+    Then status 200
+
+    * karate.call('cleanup-platform.feature', { baseUrl: baseUrl, adminAuth: adminAuth, platformId: otherPlatformId })

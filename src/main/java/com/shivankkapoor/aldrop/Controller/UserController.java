@@ -10,6 +10,7 @@ import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.RegisterUserRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.ResetPasswordRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.VerifyTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
@@ -161,6 +162,28 @@ public class UserController {
             HttpServletRequest servletRequest){
         UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
         authService.logoutAll(platformId, request);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Reset a user's password",
+            description = "Sets a new password for a user on the calling platform without needing "
+                    + "the old one, so the platform is responsible for having verified the user's "
+                    + "identity first. Every session the user has is revoked, so they have to log in "
+                    + "again with the new password. Two-factor settings are left as they are.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "The password was changed and the user's sessions were revoked."),
+            @ApiResponse(responseCode = "400", description = "Validation failed; the password must be at least 8 characters.", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Missing, unknown, or deactivated platform API key.", content = @Content),
+            @ApiResponse(responseCode = "404", description = "No such user on this platform.", content = @Content)
+    })
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(
+            @Valid @RequestBody ResetPasswordRequestDTO request,
+            HttpServletRequest servletRequest){
+        UUID platformId = (UUID) servletRequest.getAttribute(PlatformApiKeyAuthFilter.PLATFORM_ID_ATTRIBUTE);
+        log.info("Password reset requested, platformId={}, username={}", platformId, request.getUsername());
+        authService.resetPassword(platformId, request);
 
         return ResponseEntity.noContent().build();
     }

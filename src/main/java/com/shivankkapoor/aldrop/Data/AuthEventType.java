@@ -15,5 +15,6 @@ public enum AuthEventType {
     SESSION_INVALID,
     SESSION_VALIDATED,
     LOGOUT,
-    LOGOUT_ALL
+    LOGOUT_ALL,
+    PASSWORD_RESET
 }

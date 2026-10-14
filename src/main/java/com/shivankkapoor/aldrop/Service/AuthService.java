@@ -21,6 +21,7 @@ import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.ResetPasswordRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.VerifyTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
@@ -40,6 +41,7 @@ import com.shivankkapoor.aldrop.Exception.PlatformNotFoundException;
 import com.shivankkapoor.aldrop.Exception.TooManyAttemptsException;
 import com.shivankkapoor.aldrop.Exception.TotpAlreadyEnabledException;
 import com.shivankkapoor.aldrop.Exception.TotpNotAvailableException;
+import com.shivankkapoor.aldrop.Exception.UserNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
 import com.shivankkapoor.aldrop.Repository.SessionRepository;
 import com.shivankkapoor.aldrop.Repository.TotpSessionRepository;
@@ -361,6 +363,24 @@ public class AuthService {
                         },
                         () -> log.info("Logout-all no-op, no matching session for platformId={}", platformId)
                 );
+    }
+
+    @Transactional
+    public void resetPassword(UUID platformId, ResetPasswordRequestDTO requestDTO) {
+        String username = requestDTO.getUsername().toLowerCase(Locale.ROOT);
+        User user = userRepository.findByPlatformIdAndUsername(platformId, username)
+                .orElseThrow(() -> new UserNotFoundException(username));
+
+        user.setPasswordHash(passwordHasher.hash(requestDTO.getNewPassword()));
+        userRepository.save(user);
+
+        List<Session> sessions = sessionRepository.findByUserIdAndPlatformId(user.getId(), platformId);
+        sessionRepository.deleteAll(sessions);
+        sessions.forEach(revoked -> sessionLookup.evict(revoked.getTokenHash()));
+
+        log.info("Password reset, userId={}, platformId={}, sessionsRevoked={}",
+                user.getId(), platformId, sessions.size());
+        authEventService.record(platformId, user.getId(), null, AuthEventType.PASSWORD_RESET, null, null);
     }
 
     private Session resolveActiveSession(UUID platformId, String token, String action) {

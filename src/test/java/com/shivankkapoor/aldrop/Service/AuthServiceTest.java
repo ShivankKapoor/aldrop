@@ -39,6 +39,7 @@ import com.shivankkapoor.aldrop.DTO.Request.EnableTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LoginRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutAllRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.LogoutRequestDTO;
+import com.shivankkapoor.aldrop.DTO.Request.ResetPasswordRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.ValidateSessionRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Request.VerifyTotpRequestDTO;
 import com.shivankkapoor.aldrop.DTO.Response.ConfirmTotpResponseDTO;
@@ -52,6 +53,7 @@ import com.shivankkapoor.aldrop.Exception.InvalidTotpException;
 import com.shivankkapoor.aldrop.Exception.TooManyAttemptsException;
 import com.shivankkapoor.aldrop.Exception.TotpAlreadyEnabledException;
 import com.shivankkapoor.aldrop.Exception.TotpNotAvailableException;
+import com.shivankkapoor.aldrop.Exception.UserNotFoundException;
 import com.shivankkapoor.aldrop.Repository.PlatformRepository;
 import com.shivankkapoor.aldrop.Repository.SessionRepository;
 import com.shivankkapoor.aldrop.Repository.TotpSessionRepository;
@@ -878,6 +880,95 @@ class AuthServiceTest {
         authService.logoutAll(platformId, request);
 
         verify(sessionRepository, never()).findByUserIdAndPlatformId(any(), any());
+        verify(sessionRepository, never()).deleteAll(any());
+        verify(sessionLookup, never()).evict(any());
+        verifyNoAuthEventRecorded();
+    }
+
+    // ---- resetPassword ----
+
+    private ResetPasswordRequestDTO resetRequest(String username, String newPassword) {
+        ResetPasswordRequestDTO request = new ResetPasswordRequestDTO();
+        request.setUsername(username);
+        request.setNewPassword(newPassword);
+        return request;
+    }
+
+    @Test
+    void resetPasswordStoresNewHashAndRevokesAllSessions() {
+        User user = activeUser();
+
+        Session one = new Session();
+        one.setId(UUID.randomUUID());
+        one.setTokenHash("hash-one");
+        Session two = new Session();
+        two.setId(UUID.randomUUID());
+        two.setTokenHash("hash-two");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(user));
+        when(passwordHasher.hash("brand-new-password")).thenReturn("new-hash");
+        when(sessionRepository.findByUserIdAndPlatformId(userId, platformId)).thenReturn(List.of(one, two));
+
+        authService.resetPassword(platformId, resetRequest("alice", "brand-new-password"));
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getPasswordHash()).isEqualTo("new-hash");
+        verify(sessionRepository).deleteAll(List.of(one, two));
+        verify(sessionLookup).evict("hash-one");
+        verify(sessionLookup).evict("hash-two");
+        verifyAuthEventRecorded(AuthEventType.PASSWORD_RESET, userId, null);
+    }
+
+    @Test
+    void resetPasswordLowercasesUsernameBeforeLookup() {
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.hash("brand-new-password")).thenReturn("new-hash");
+        when(sessionRepository.findByUserIdAndPlatformId(userId, platformId)).thenReturn(List.of());
+
+        authService.resetPassword(platformId, resetRequest("ALICE", "brand-new-password"));
+
+        verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    void resetPasswordSucceedsWhenUserHasNoSessions() {
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(activeUser()));
+        when(passwordHasher.hash("brand-new-password")).thenReturn("new-hash");
+        when(sessionRepository.findByUserIdAndPlatformId(userId, platformId)).thenReturn(List.of());
+
+        authService.resetPassword(platformId, resetRequest("alice", "brand-new-password"));
+
+        verify(sessionLookup, never()).evict(any());
+        verifyAuthEventRecorded(AuthEventType.PASSWORD_RESET, userId, null);
+    }
+
+    @Test
+    void resetPasswordLeavesTotpSettingsUntouched() {
+        User user = activeUserWithTotpEnabled("SEED123", "backup-one");
+
+        when(userRepository.findByPlatformIdAndUsername(platformId, "alice")).thenReturn(Optional.of(user));
+        when(passwordHasher.hash("brand-new-password")).thenReturn("new-hash");
+        when(sessionRepository.findByUserIdAndPlatformId(userId, platformId)).thenReturn(List.of());
+
+        authService.resetPassword(platformId, resetRequest("alice", "brand-new-password"));
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().isTotpEnabled()).isTrue();
+        assertThat(captor.getValue().getTotpSeed()).isEqualTo("SEED123");
+        assertThat(captor.getValue().getTotpBackupCodes()).containsExactly("backup-one");
+    }
+
+    @Test
+    void resetPasswordThrowsWhenUserNotFoundOnPlatform() {
+        when(userRepository.findByPlatformIdAndUsername(platformId, "ghost")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.resetPassword(platformId, resetRequest("ghost", "brand-new-password")))
+                .isInstanceOf(UserNotFoundException.class);
+
+        verify(passwordHasher, never()).hash(any());
+        verify(userRepository, never()).save(any());
         verify(sessionRepository, never()).deleteAll(any());
         verify(sessionLookup, never()).evict(any());
         verifyNoAuthEventRecorded();
