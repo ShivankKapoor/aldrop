@@ -1,0 +1,13 @@
+services:
+  aldrop:
+    build: .
+    image: aldrop:latest
+    container_name: aldrop
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "10"

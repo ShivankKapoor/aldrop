@@ -32,13 +32,17 @@ Requires a PostgreSQL database with `schema.sql` applied, and a `.env` in the pr
 
 ```bash
 psql -d aldrop -f schema.sql     # once
-./run.sh                         # build the image and start it on :4000
-./stop.sh                        # remove aldrop containers and images
+docker compose up -d --build     # build the image and start it on :4000
+docker compose logs -f           # follow the logs
+docker compose down              # stop and remove the container
 ```
 
-`run.sh` builds with Podman and waits for `/monitor` to answer before reporting success. The `.env`
-is baked into the image at build time, so the script rebuilds on every run rather than reusing a
-stale image.
+The container restarts automatically (`unless-stopped`) after a crash or a Docker daemon restart, until
+you stop it with `docker compose stop` or `down`. The `.env` is baked into the image at build time, so
+pass `--build` after changing it rather than reusing a stale image.
+
+Logs are kept by Docker's `local` driver (10 files of 10 MB, oldest dropped first). They survive restarts
+but are deleted with the container, so `down` or a recreate on `up --build` starts a fresh log.
 
 To run it directly instead:
 
