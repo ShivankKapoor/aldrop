@@ -15,6 +15,10 @@ RUN ./mvnw -B clean package -DskipTests
 FROM docker.io/library/ibm-semeru-runtimes:open-25-jre AS runner
 WORKDIR /deployments
 
+# Pick up OS security patches (e.g. apt CVE-2026-109518) that the base image may not include yet.
+USER root
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder --chown=185:root /build/target/*-SNAPSHOT.jar app.jar
 
 # application.properties imports ./.env relative to the working directory. It is declared optional,
@@ -22,5 +26,8 @@ COPY --from=builder --chown=185:root /build/target/*-SNAPSHOT.jar app.jar
 COPY --chown=185:root .env .env
 
 EXPOSE 4000
+
+# Run as a non-root user.
+USER 185
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
